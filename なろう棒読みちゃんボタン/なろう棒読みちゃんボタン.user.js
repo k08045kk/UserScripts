@@ -10,7 +10,8 @@
 // @license     MIT License
 // @see         https://opensource.org/licenses/MIT
 // @namespace   https://www.bugbugnow.net/
-// @version     3
+// @version     4
+// @see         4 - update - 棒読みちゃんへの転送を遅延する(長時間待機後に連続で転送するとエラーことがあるため)
 // @see         3 - update - リファクタリング
 // @see         2 - update - httpsからhttpへの遷移の記述をコメントアウト状態で追加
 // @see         1 - add - 初版
@@ -18,15 +19,21 @@
 // ==/UserScript==
 
 (function() {
-  if (document.querySelector('#novel_honbun') == null) {
-    // 対象ページではない時
-    return;
-  }
   if (window.location.href.startsWith('https:')) {
     // httpsの場合、httpに遷移する
     // 強制遷移したくない場合、下記2行をコメントアウトする
     window.location.href = 'http'+window.location.href.substring(5);
     return;
+  }
+  if (document.querySelector('#novel_honbun') == null) {
+    // 対象ページではない時
+    return;
+  }
+  
+  function sleep(msec) {
+    return new Promise(function(resolve) {
+      setTimeout(function() {resolve()}, msec);
+    });
   }
   
   // 棒読みちゃんへ文字列を送信する
@@ -58,7 +65,7 @@
         //console.log('Server message: '+e.data);
       };
       socket.onerror = function(e) {
-          //console.log('Server error: '+e);
+        //console.log('Server error: '+e);
         if (callee.error !== true) {
           callee.error = true;
           alert('棒読みちゃんへの送信に失敗しました');
@@ -74,7 +81,7 @@
   
   // 作者情報を取得(再生ボタンを配置する前に取得)
   let title = document.querySelector('.contents1').innerText;
-  function bouyomiChanButton() {
+  async function bouyomiChanButton() {
     //console.log('なろう棒読みちゃんボタン');
     
     // ２重クリック防止
@@ -87,9 +94,11 @@
     text += title + '…';
     
     // サブタイトルを追加
-    let subtitle = document.querySelector('.novel_subtitle').innerText;
-    //console.log('subtitle: '+subtitle);
-    text += subtitle + '…';
+    try {
+      let subtitle = document.querySelector('.novel_subtitle').innerText;
+      //console.log('subtitle: '+subtitle);
+      text += subtitle + '…';
+    } catch (e) {}
     
     // ルビあり文字の原文を削除
     // ルビあり文字を2重に読み上げるのを回避
@@ -101,11 +110,11 @@
     
     text += '…\n以上、棒読みちゃんによる朗読でした。';
     
-    // 一定文字数をこえると、プラグインがインデックス範囲外で停止するため、複数回送信する
+    // 一定文字数をこえると、プラグインがインデックス範囲外でハングするため、複数回送信する
     // 「。」を区切りとして複数回送信する。
     // (文字数だけで区切ると単語の途中で送信してしまう可能性があるため)
     // (単語の途中で送信してしまうと、棒読みちゃんの発音が意図しないものとなる可能性が高い)
-    let len = 200;    // 一回の最大送信文字数
+    let len = 200;      // 一回の最大送信文字数
     let idx = 0;
     let next, prev = 0;
     while (true) {
@@ -119,6 +128,14 @@
         }
         //console.log(text.substr(idx, prev-idx));
         bouyomiChanWebSocketPlugin(text.substr(idx, prev-idx));
+        if (idx == 0) {
+          await sleep(3000); // 連続送信すると棒読みちゃん側がエラーするため、遅延させる
+        } else if (idx < 10) {
+          await sleep(1000); // 連続送信すると棒読みちゃん側がエラーするため、遅延させる
+        } else {
+          await sleep(500);  // 連続送信すると棒読みちゃん側がエラーするため、遅延させる
+        }
+        
         idx = prev;
       }
       prev = next + 1;
@@ -140,5 +157,27 @@
         + '<input id="bouyomichan" type="button" value="棒読みちゃん"/>'
       + '</div>';
     document.querySelector('#bouyomichan').addEventListener('click', bouyomiChanButton);
+    
+    var bns = document.querySelectorAll('#novel_color .novel_bn a');
+    if (bns && bns.length == 2) {
+      var bn = document.querySelector('#novel_color .novel_bn');
+      bn.innerHTML = '<a href="'+bns[0].href+'?bouyomityan=true"></a>' + bn.innerHTML + '<a href="'+bns[1].href+'?bouyomityan=true"></a>';
+    }
+    
+    var urlParam = location.search.substring(1);
+    if (urlParam) {
+      var param = urlParam.split('&');
+      // パラメータを格納する用の配列を用意
+      var paramArray = [];
+
+      // 用意した配列にパラメータを格納
+      for (i = 0; i < param.length; i++) {
+        var paramItem = param[i].split('=');
+        paramArray[paramItem[0]] = paramItem[1];
+      }
+      if (paramArray.bouyomityan == 'true') {
+        bouyomiChanButton();
+      }
+    }
   }
 })();
