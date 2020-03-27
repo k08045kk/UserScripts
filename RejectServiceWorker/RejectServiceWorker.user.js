@@ -1,6 +1,7 @@
 // ==UserScript==
-// @name         ServiceWorkerUnregister.user.js
-// @description  Uninstall the installed ServiceWorker.
+// @name         RejectServiceWorkers.user.js
+// @description  Reject to register a ServiceWorker.
+//               Uninstall ServiceWorker that has been installed.
 //               If ServiceWorker was installed, it clears the cache.
 //               You can use it as a whitelist by setting @exclude.
 // @include      https://*/*
@@ -13,21 +14,33 @@
 // ==/UserScript==
 
 (function() {
-  var cacheDelete = function() {
+  // Reject to register a ServiceWorker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register = function(scriptURL, options) {
+      return new Promise(function(resolve, reject) {
+        reject(new Error('Reject to register a ServiceWorker.'));
+        //console.log('Reject to register a ServiceWorker.');
+      });
+    };
+  }
+  
+  // Uninstalling an Installed ServiceWorker
+  const cacheDelete = function() {
     if ('caches' in window) {
       window.caches.keys().then(function(keys) {
         Promise.all(keys.map((key) => { return window.caches.delete(key); })).then(() => {
-          //console.log('cache delete.');
+          //console.log('caches delete.');
         });
       });
     }
   };
-  var unregister = function() {
+  const unregister = function() {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(function(registrations) {
         for(let registration of registrations) {
           registration.unregister();
-          //console.log('serviceworker unregister.');
+          //console.log('ServiceWorker unregister.');
+          
           cacheDelete();
         }
       });
@@ -35,5 +48,4 @@
   };
   window.addEventListener('load', unregister);
   window.addEventListener('beforeunload', unregister);
-  window.addEventListener('unload', unregister);
 })();
