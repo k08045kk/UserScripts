@@ -11,17 +11,18 @@
 // @author       toshi (https://github.com/k08045kk)
 // @license      MIT License
 // @see          https://opensource.org/licenses/MIT
-// @version      0.1.1
+// @version      0.2.0
 // @see          0.1.0 - 20200328 - 初版
 // @see          0.1.1 - 20200415 - 修正
+// @see          0.2.0 - 20200926 - Greasemonkey対応（unsafeWindow経由でwindowのオブジェクトを書き換え）
 // @see          https://www.bugbugnow.net/2020/03/Reject-to-register-a-ServiceWorker.html
-// @grant        none
+// @grant        unsafeWindow
 // ==/UserScript==
 
-(function() {
+(function(w) {
   // Reject to register a ServiceWorker
   if ('serviceWorker' in navigator) {
-    ServiceWorkerContainer.prototype.register = function(scriptURL, options) {
+    w.ServiceWorkerContainer.prototype.register = function(scriptURL, options) {
       return new Promise((resolve, reject) => {
         //console.log('Reject to register a ServiceWorker.');
         reject(new Error('Reject to register a ServiceWorker.'));
@@ -37,12 +38,12 @@
         //console.log('ServiceWorker unregister.');
       }
       if (registrations.length != 0) {
-        window.caches.keys().then((keys) => {
-          Promise.all(keys.map((key) => { return window.caches.delete(key); })).then(() => {
+        caches.keys().then((keys) => {
+          Promise.all(keys.map((key) => { caches.delete(key); })).then(() => {
             //console.log('caches delete.');
           });
         });
       }
     });
   }
-})();
+})(unsafeWindow || window);
