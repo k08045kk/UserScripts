@@ -16,6 +16,7 @@
 // @see         3 - update - リファクタリング
 // @see         4 - update - 棒読みちゃんへの転送を遅延する(長時間待機後に連続で転送するとエラーことがあるため)
 // @see         5 - update - 朗読内容を微調整（タイトルなし、強調ルビなし、短編にボタン追加）
+// @see         5 - fix - 自動朗読が動作していない
 // @grant       none
 // ==/UserScript==
 
@@ -26,64 +27,62 @@
     window.location.href = 'http'+window.location.href.substring(5);
     return;
   }
-  if (document.querySelector('#novel_honbun') == null) {
+  if (document.getElementById('novel_honbun') == null) {
     // 対象ページではない時
     return;
   }
   //window.alert = function(text) { console.log(text); };
   
-  function sleep(msec) {
-    return new Promise(function(resolve) {
-      setTimeout(function() {resolve()}, msec);
-    });
-  }
+  // ミリ秒間待機する
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   
   // 棒読みちゃんへ文字列を送信する
   // 棒読みちゃんが以下のプラグインを設定した状態で、
   // ローカル環境で動作していることが必須条件となる。
   // 棒読みちゃん用のWebSocket受付プラグイン
-  // https://github.com/chocoa/BouyomiChan-WebSocket-Plugin
-  function bouyomiChanWebSocketPlugin(text) {
-    let callee = bouyomiChanWebSocketPlugin;
-    let host = 'ws://localhost:50002/';
-    if ('https:' == document.location.protocol) {
-      // 未対応だが、SSL版はポートを変更する予定
-      host = 'wss://localhost:50003/';
-    }
+  // see https://github.com/chocoa/BouyomiChan-WebSocket-Plugin
+  function sendBouyomiChanWebSocketPlugin(text) {
+    const callee = sendBouyomiChanWebSocketPlugin;
+    const host = 'ws://localhost:50002/';
+    
     try{
-      let socket = new WebSocket(host);
+      const socket = new WebSocket(host);
       
-      socket.onopen = function() {
+      socket.onopen = function(event) {
         //console.log('Server open.');
         
-        let delim = '<bouyomi>';
-        let speed = -1; // 速度50-200。-1を指定すると本体設定
-        let pitch = -1; // ピッチ50-200。-1を指定すると本体設定
-        let volume= -1; // ボリューム0-100。-1を指定すると本体設定
-        let type  =  0; // 声質(0.本体設定/1.女性1/2.女性2/3.男性1/4.男性2/5.中性/6.ロボット/7.機械1/8.機械2)
+        const delim = '<bouyomi>';
+        const speed = -1; // 速度50-200。-1を指定すると本体設定
+        const pitch = -1; // ピッチ50-200。-1を指定すると本体設定
+        const volume= -1; // ボリューム0-100。-1を指定すると本体設定
+        const type  =  0; // 声質(0.本体設定/1.女性1/2.女性2/3.男性1/4.男性2/5.中性/6.ロボット/7.機械1/8.機械2)
         socket.send('' + speed + delim + pitch + delim + volume + delim + type + delim + text);
       };
-      socket.onmessage = function(e) {
-        //console.log('Server message: '+e.data);
+      socket.onmessage = function(event) {
+        //console.log('Server message: '+event.data);
       };
-      socket.onerror = function(e) {
-        //console.log('Server error: '+e);
+      socket.onerror = function(event) {
+        //console.log('Server error: '+event);
         if (callee.error !== true) {
           callee.error = true;
-          alert('棒読みちゃんへの送信に失敗しました');
+          alert('棒読みちゃんへの送信に失敗しました。');
         }
       };
-      socket.onclose = function() {
+      socket.onclose = function(event) {
         //console.log('Server close.');
       };
     } catch(exception){
       //console.log('Error: '+exception);
     }
-  }
+  };
   
   // 作者情報を取得(再生ボタンを配置する前に取得)
-  let title = document.querySelector('.contents1')?.innerText || '';
-  async function bouyomiChanButton() {
+  let title = '';
+  try {
+    title = document.querySelector('.contents1').innerText;
+  } catch (e) {}
+  
+  async function onBouyomiChanButton() {
     //console.log('なろう棒読みちゃんボタン');
     
     // ２重クリック防止
@@ -94,34 +93,36 @@
     // タイトルを追加
     // タイトルなし（長いタイトルを毎回読むのが嫌なため）
     //console.log('title: '+title);
-    //text += title + '…';
+    //text += title + '…。';
     
     // サブタイトルを追加
     try {
       let subtitle = document.querySelector('.novel_subtitle').innerText;
       //console.log('subtitle: '+subtitle);
-      text += subtitle + '…';
+      text += subtitle + '…。';
     } catch (e) {}
     
-    // ルビあり文字の原文を削除
-    // ルビあり文字を2重に読み上げるのを回避
-    // 強調ルビを除外
-    let novel = document.querySelector('#novel_honbun').cloneNode(true);
+    // 本文を追加
+    // ルビあり文字の原文を削除（ルビあり文字を2重に読み上げるのを回避）
+    const novel = document.getElementById('novel_honbun').cloneNode(true);
     //novel.querySelectorAll('ruby rb').forEach(function(v, i, a) { v.innerText = ''; });
     novel.querySelectorAll('ruby rp').forEach(function(v, i, a) { v.innerText = ''; });
     novel.querySelectorAll('ruby').forEach(function(v, i, a) {
       const rb = v.querySelector('rb');
       const rt = v.querySelector('rt');
-      if (rt && rt.innerText.replace(/[・]/g, '') == '') {
+      if (!rt) {
+        
+      } else if (rt.innerText.replace(/[・、]+/g, '') == '') {
+        // 傍点ならば、原文を優先する
         rt.innerText = '';
       } else if(rb) {
         rb.innerText = '';
       }
     });
-    // 本文を追加
     text += novel.innerText;
     
-    text += '…\n以上、棒読みちゃんによる朗読でした。';
+    text += '…。\n以上、棒読みちゃんによる朗読でした。';
+    
     
     // 一定文字数をこえると、プラグインがインデックス範囲外でハングするため、複数回送信する
     // 「。」を区切りとして複数回送信する。
@@ -130,6 +131,7 @@
     let len = 200;  // 一回の最大送信文字数
     let idx = 0;
     let next, prev = 0;
+    let count = 0;
     while (true) {
       next = text.indexOf('。', prev);
       //console.log(next+' '+prev+' '+idx);
@@ -140,58 +142,66 @@
           prev = idx + len;
         }
         //console.log(text.substr(idx, prev-idx));
-        bouyomiChanWebSocketPlugin(text.substr(idx, prev-idx));
-        if (idx == 0) {
-          await sleep(3000); // 連続送信すると棒読みちゃん側がエラーするため、遅延させる
-        } else if (idx < 10) {
-          await sleep(500);  // 連続送信すると棒読みちゃん側がエラーするため、遅延させる
+        sendBouyomiChanWebSocketPlugin(text.substr(idx, prev-idx));
+        // 連続送信すると棒読みちゃん側がエラーするため、遅延させる
+        // 長時間待機後の連続送信で失敗するため、最初のみ待機時間を伸ばす
+        if (count == 0) {
+          await sleep(2500); 
+        } else if (count <= 5) {
+          await sleep(500);
         } else {
-          await sleep(100);  // 連続送信すると棒読みちゃん側がエラーするため、遅延させる
+          await sleep(100);
         }
+        count++;
         
         idx = prev;
       }
       prev = next + 1;
     }
     //console.log(text.substr(idx, text.length-idx));
-    bouyomiChanWebSocketPlugin(text.substr(idx, text.length-idx));
+    sendBouyomiChanWebSocketPlugin(text.substr(idx, text.length-idx));
     // 一定の文字列を超えた場合、それ以降朗読しなくなる問題がある
     // 例：http://ncode.syosetu.com/n4006r/12/
-  }
+  };
   
   // https未対応(対応した場合、if分を削除すること)
   if ('http:' == document.location.protocol) {
     // 再生ボタンを配置
     const element = document.querySelector('.contents1') || document.querySelector('.novel_title');
-    
-    element.innerHTML += ''
-      + '<div style="float:right;">'
-        + '<style>'
-          + 'input#bouyomichan{padding:0px 1em 0 1em;cursor:pointer;text-align:center;background-color:#0076bf;background-image:linear-gradient(#0076bf,#006ea5);border-color:#004b9a;box-shadow:0 1px 0 hsla(0,0%,100%,.4) inset,0 1px 0 hsla(0,0%,100%,.4);color:#fff;border-radius:3px;line-height:1.75}input#bouyomichan:hover{background:0 0 repeat scroll 0 0 #008fd6;border-color:#00437f}input#bouyomichan:disabled{background-image:none;background-color:#ccc;border-color:#ccc}'
-        + '</style>'
-        + '<input id="bouyomichan" type="button" value="棒読みちゃん"/>'
-      + '</div>';
-    document.querySelector('#bouyomichan').addEventListener('click', bouyomiChanButton);
-    
-    var bns = document.querySelectorAll('#novel_color .novel_bn a');
-    if (bns && bns.length == 2) {
-      var bn = document.querySelector('#novel_color .novel_bn');
-      bn.innerHTML = '<a href="'+bns[0].href+'?bouyomityan=true"></a>' + bn.innerHTML + '<a href="'+bns[1].href+'?bouyomityan=true"></a>';
+    element.innerHTML += `
+<div style="float:right;">
+  <style>
+    #bouyomichan{
+      cursor: pointer;
+      color: #fff;
+      background: #0076bf;
+      padding: .25em 1em;
     }
+    #bouyomichan:disabled{
+      color: #000;
+      background: #ccc;
+    }
+  </style>
+  <button id="bouyomichan">棒読みちゃん</button>
+</div>`;
+    document.getElementById('bouyomichan').addEventListener('click', onBouyomiChanButton);
     
+    // 自動朗読
+    // URLにbouyomichan=trueを指定するとページ移動で自動朗読する
     var urlParam = location.search.substring(1);
     if (urlParam) {
       var param = urlParam.split('&');
-      // パラメータを格納する用の配列を用意
       var paramArray = [];
-      
-      // 用意した配列にパラメータを格納
       for (i = 0; i < param.length; i++) {
         var paramItem = param[i].split('=');
         paramArray[paramItem[0]] = paramItem[1];
       }
-      if (paramArray.bouyomityan == 'true') {
-        bouyomiChanButton();
+      if (paramArray.bouyomichan == 'true') {
+        onBouyomiChanButton.call(document.getElementById('bouyomichan'));
+        
+        document.querySelectorAll('#novel_color .novel_bn a').forEach(function(v) {
+          v.href += '?bouyomichan=true';
+        });
       }
     }
   }
