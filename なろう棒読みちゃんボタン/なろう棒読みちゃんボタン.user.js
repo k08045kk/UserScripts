@@ -10,11 +10,12 @@
 // @license     MIT License
 // @see         https://opensource.org/licenses/MIT
 // @namespace   https://www.bugbugnow.net/
-// @version     4
-// @see         4 - update - 棒読みちゃんへの転送を遅延する(長時間待機後に連続で転送するとエラーことがあるため)
-// @see         3 - update - リファクタリング
-// @see         2 - update - httpsからhttpへの遷移の記述をコメントアウト状態で追加
+// @version     5
 // @see         1 - add - 初版
+// @see         2 - update - httpsからhttpへの遷移の記述をコメントアウト状態で追加
+// @see         3 - update - リファクタリング
+// @see         4 - update - 棒読みちゃんへの転送を遅延する(長時間待機後に連続で転送するとエラーことがあるため)
+// @see         5 - update - 朗読内容を微調整（タイトルなし、強調ルビなし、短編にボタン追加）
 // @grant       none
 // ==/UserScript==
 
@@ -29,6 +30,7 @@
     // 対象ページではない時
     return;
   }
+  //window.alert = function(text) { console.log(text); };
   
   function sleep(msec) {
     return new Promise(function(resolve) {
@@ -80,7 +82,7 @@
   }
   
   // 作者情報を取得(再生ボタンを配置する前に取得)
-  let title = document.querySelector('.contents1').innerText;
+  let title = document.querySelector('.contents1')?.innerText || '';
   async function bouyomiChanButton() {
     //console.log('なろう棒読みちゃんボタン');
     
@@ -90,8 +92,9 @@
     let text = '';
     
     // タイトルを追加
+    // タイトルなし（長いタイトルを毎回読むのが嫌なため）
     //console.log('title: '+title);
-    text += title + '…';
+    //text += title + '…';
     
     // サブタイトルを追加
     try {
@@ -102,9 +105,19 @@
     
     // ルビあり文字の原文を削除
     // ルビあり文字を2重に読み上げるのを回避
+    // 強調ルビを除外
     let novel = document.querySelector('#novel_honbun').cloneNode(true);
-    novel.querySelectorAll('ruby rb').forEach(function(v, i, a) { v.innerText = ''; });
+    //novel.querySelectorAll('ruby rb').forEach(function(v, i, a) { v.innerText = ''; });
     novel.querySelectorAll('ruby rp').forEach(function(v, i, a) { v.innerText = ''; });
+    novel.querySelectorAll('ruby').forEach(function(v, i, a) {
+      const rb = v.querySelector('rb');
+      const rt = v.querySelector('rt');
+      if (rt && rt.innerText.replace(/[・]/g, '') == '') {
+        rt.innerText = '';
+      } else if(rb) {
+        rb.innerText = '';
+      }
+    });
     // 本文を追加
     text += novel.innerText;
     
@@ -114,7 +127,7 @@
     // 「。」を区切りとして複数回送信する。
     // (文字数だけで区切ると単語の途中で送信してしまう可能性があるため)
     // (単語の途中で送信してしまうと、棒読みちゃんの発音が意図しないものとなる可能性が高い)
-    let len = 200;      // 一回の最大送信文字数
+    let len = 200;  // 一回の最大送信文字数
     let idx = 0;
     let next, prev = 0;
     while (true) {
@@ -131,9 +144,9 @@
         if (idx == 0) {
           await sleep(3000); // 連続送信すると棒読みちゃん側がエラーするため、遅延させる
         } else if (idx < 10) {
-          await sleep(1000); // 連続送信すると棒読みちゃん側がエラーするため、遅延させる
-        } else {
           await sleep(500);  // 連続送信すると棒読みちゃん側がエラーするため、遅延させる
+        } else {
+          await sleep(100);  // 連続送信すると棒読みちゃん側がエラーするため、遅延させる
         }
         
         idx = prev;
@@ -149,7 +162,9 @@
   // https未対応(対応した場合、if分を削除すること)
   if ('http:' == document.location.protocol) {
     // 再生ボタンを配置
-    document.querySelector('.contents1').innerHTML += ''
+    const element = document.querySelector('.contents1') || document.querySelector('.novel_title');
+    
+    element.innerHTML += ''
       + '<div style="float:right;">'
         + '<style>'
           + 'input#bouyomichan{padding:0px 1em 0 1em;cursor:pointer;text-align:center;background-color:#0076bf;background-image:linear-gradient(#0076bf,#006ea5);border-color:#004b9a;box-shadow:0 1px 0 hsla(0,0%,100%,.4) inset,0 1px 0 hsla(0,0%,100%,.4);color:#fff;border-radius:3px;line-height:1.75}input#bouyomichan:hover{background:0 0 repeat scroll 0 0 #008fd6;border-color:#00437f}input#bouyomichan:disabled{background-image:none;background-color:#ccc;border-color:#ccc}'
@@ -169,7 +184,7 @@
       var param = urlParam.split('&');
       // パラメータを格納する用の配列を用意
       var paramArray = [];
-
+      
       // 用意した配列にパラメータを格納
       for (i = 0; i < param.length; i++) {
         var paramItem = param[i].split('=');
