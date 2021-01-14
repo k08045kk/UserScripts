@@ -9,7 +9,7 @@
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License
 // @see         https://opensource.org/licenses/MIT
-// @version     1.1.0
+// @version     1.2.0
 // @see         1.0.0 - 20211013 - 初版
 // @require     https://cdn.jsdelivr.net/npm/hotkeys-js@3.8.1/dist/hotkeys.min.js
 // @require     https://cdn.jsdelivr.net/npm/jszip@3.5.0/dist/jszip.js
@@ -46,35 +46,25 @@
     }
   };
   
-  // zipファイルのblobデータを作成
-  function generateZipBlob(files, onUpdate) {
-    const zip = new JSZip();
-    files.forEach((file) => {
-      if (file.name) {
-        zip.file(file.name, file.data);
-      }
-    });
-    return zip.generateAsync({type:'blob'}, onUpdate);
-    // 補足：データの取得に失敗した場合、空のファイルを保存します。
-    //       これには、データ取得に失敗したことを明示する意味合いがあります。
-    // 補足：ファイル名が重複している場合、最後のファイルのみ保存します。
-  };
-  
   // ZIPダウンロード
   async function downloadZipAsync(arg) {
-    arg.count = -1;
+    drawProgress(' ');
+    arg.startTime = new Date().getTime();
+    
+    const zip = new JSZip();
+    arg.count = 0;
     arg.error = 0;
     const len = (arg.urls.length+'').length;
-    function onDownloadUpdate(failure) {
-      failure && arg.error++;
+    function onDownload(file) {
+      !file.data && arg.error++;
       arg.count++;
       drawProgress('Download: '+(Array(len).join(' ')+arg.count).slice(-len)+'/'+arg.urls.length);
+      zip.file(file.name, file.data);
     };
-    onDownloadUpdate();
     
     // ファイルのダウンロード
     arg.names = arg.names || [];
-    const files = await Promise.all(
+    await Promise.all(
       arg.urls.map((url, i) => {
         const name = arg.names[i] || url.slice(url.lastIndexOf('/') + 1);
         arg.names[i] = name;
@@ -85,23 +75,23 @@
             responseType: 'arraybuffer',        // Greasemonkeyは、blob非対応
             onload: function(xhr) {
               const isSuccess = 200 <= xhr.status && xhr.status < 300 || xhr.status === 304;
-              onDownloadUpdate(!isSuccess);
               if (isSuccess) {
-                resolve({name:name, data:xhr.response});
+                onDownload({name:name, data:xhr.response});
               } else {
-                resolve({name:name, data:null});
+                onDownload({name:name, data:null});
               }
+              resolve();
             },
-            onerror: function() { onDownloadUpdate(true); resolve({name:name, data:null}); },
-            onabort: function() { onDownloadUpdate(true); resolve({name:name, data:null}); },
-            ontimeout: function() { onDownloadUpdate(true); resolve({name:name, data:null}); }
+            onerror: function() { onDownload({name:name, data:null}); resolve(); },
+            onabort: function() { onDownload({name:name, data:null}); resolve(); },
+            ontimeout: function() { onDownload({name:name, data:null}); resolve(); }
           });
         });
       })
     );
     
     // ZIPファイルの圧縮
-    const blob = await generateZipBlob(files, function(metadata) {
+    const blob = await zip.generateAsync({type:'blob'}, function(metadata) {
       drawProgress('Compress: '+(Array(3).join(' ')+Math.floor(metadata.percent)).slice(-3)+'%');
     });
     const dataUrl = URL.createObjectURL(blob);
@@ -120,15 +110,17 @@
     await new Promise(resolve => setTimeout(resolve, 1000));
     window.URL.revokeObjectURL(dataUrl);
     drawProgress();
-    
-    // 完了通知
-    arg.onComplate && arg.onComplate(arg);
+    arg.endTime = new Date().getTime();
+    arg.oncomplate && arg.oncomplate(arg);
     
     // 備考：onComplate()呼び出しから実際のダウンロードがブラウザ上で発生するまでに、
     //       僅かなタイムラグが発生する可能性があります。
     //       実際のダウンロードがブラウザで開始するまで、ページをクローズしないで下さい。
     // 備考：urlsのファイル名に重複がある場合、後あるファイルのみ保存します。
     //       namesを指定して明示的にファイル名を指示することで回避できます。
+    // 備考：データの取得に失敗した場合、空のファイルを保存します。
+    //       これには、データ取得に失敗したことを明示する意味合いがあります。
+    // 備考：ファイル名が重複している場合、最後のファイルのみ保存します。
   };
   
   // ショートカットキー設定
@@ -139,8 +131,11 @@
       return;
     }
     isRun = true;
+    
+    // 標準関数
     const onDefaultComplate = function(arg) {
-      alert('ダウンロード完了\n\n'+arg.name+' ('+arg.count+'/'+arg.urls.length+':'+arg.error+')');
+      const second = Math.floor((arg.endTime - arg.startTime)/1000);
+      alert('ダウンロード完了\n\n'+arg.name+' ('+arg.count+'/'+arg.urls.length+':'+arg.error+', '+second+'s)');
       arg.close && window.close();
       isRun = false;
     };
