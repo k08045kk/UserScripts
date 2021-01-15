@@ -11,7 +11,7 @@
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License
 // @see         https://opensource.org/licenses/MIT
-// @version     2.0.1
+// @version     2.0.2
 // @see         1.0.0 - 20211013 - 初版
 // @see         2.0.0 - 20211015 - WebWorker対応（高速化対応）
 // @require     https://cdn.jsdelivr.net/npm/hotkeys-js@3.8.1/dist/hotkeys.min.js
@@ -22,6 +22,8 @@
   'use strict';
   
   // 進歩表示
+  const root = document.createElement('div');
+  const shadow = root.attachShadow({mode:'closed'});
   const box = document.createElement('div');
   box.setAttribute('style', `
     z-index: 2147483647;
@@ -39,14 +41,15 @@
     font-family: monospace, monospace;
     white-space: pre;
   `);
+  shadow.appendChild(box)
   const drawProgress = (text) => {
-    if (!box.parentNode && text) {
-      document.body.appendChild(box);
+    if (!root.parentNode && text) {
+      document.body.appendChild(root);
     }
     if (text) {
       box.textContent = text;
-    } else if (box.parentNode) {
-      box.remove();
+    } else if (root.parentNode) {
+      root.remove();
     }
   };
   
@@ -74,8 +77,7 @@
     const second = Math.floor((arg.endtime - arg.starttime) / 1000);
     alert('Download complete\n\n'
          +arg.name+'\n'
-         +arg.count+'/'+arg.urls.length+':'+arg.error+' - '+second+'s');
-    arg.close && window.close();
+         +arg.count+'/'+arg.urls.length+':'+arg.error+' | '+second+'s');
   };
   
   /**
@@ -83,10 +85,10 @@
    * @param {Object} arg - 引数
    * in     {string} arg.name - ZIPファイルのファイル名
    * in     {string[]} arg.urls - ダウンロードファイルのURL
+   *                              または、Blob
    * in/out {string[]} arg.names - ダウンロードファイルのファイル名
    * in/out {Function} arg.onupdate - 更新時のコールバック関数（例：(arg) => {}）
    * in/out {Function} arg.oncomplate - 完了時のコールバック関数（例：(arg) => {}）
-   * in     {boolean} arg.close - ダウンロード完了後にタブをクローズする
    *    out {string} arg.status - 進歩状態
    *    out {number} arg.count - ダウンロード件数
    *    out {number} arg.error - ダウンロード失敗件数
@@ -133,7 +135,7 @@
     `;
     const workerUrl = URL.createObjectURL(new Blob([code]));
     const worker = new Worker(workerUrl);
-    URL.revokeObjectURL(workerUrl)
+    URL.revokeObjectURL(workerUrl);
     
     // ファイルのダウンロード
     arg.status = 'download';
@@ -153,21 +155,31 @@
     };
     arg.names = arg.names || [];
     await Promise.all(arg.urls.map((url, i) => {
-      const name = arg.names[i] = arg.names[i] || url.slice(url.lastIndexOf('/') + 1);
+      if (url instanceof Blob) { url.name = url.name || ''+i; }
+      const name = arg.names[i] = arg.names[i] || url.name || url.slice(url.lastIndexOf('/') + 1) || ''+i;
       return new Promise((resolve, reject) => {
-        GM.xmlHttpRequest({
-          method: 'GET',
-          url: url,
-          responseType: 'arraybuffer',
-          onload: function(xhr) {
-            const isSuccess = 200 <= xhr.status && xhr.status < 300 || xhr.status === 304;
-            onDownload({name:name, data:(isSuccess ? xhr.response : null)});
+        if (url instanceof Blob) {
+          // ページの内部データ
+          url.arrayBuffer().then((buffer) => {
+            onDownload({name:name, data:buffer});
             resolve();
-          },
-          onerror: function() { onDownload({name:name, data:null}); resolve(); },
-          onabort: function() { onDownload({name:name, data:null}); resolve(); },
-          ontimeout: function() { onDownload({name:name, data:null}); resolve(); }
-        });
+          });
+        } else {
+          // ページの外部データ
+          GM.xmlHttpRequest({
+            method: 'GET',
+            url: url,
+            responseType: 'arraybuffer',
+            onload: function(xhr) {
+              const isSuccess = 200 <= xhr.status && xhr.status < 300 || xhr.status === 304;
+              onDownload({name:name, data:(isSuccess ? xhr.response : null)});
+              resolve();
+            },
+            onerror: function() { onDownload({name:name, data:null}); resolve(); },
+            onabort: function() { onDownload({name:name, data:null}); resolve(); },
+            ontimeout: function() { onDownload({name:name, data:null}); resolve(); }
+          });
+        }
       });
     }));
     
@@ -189,19 +201,18 @@
         const a = document.createElement('a');
         a.href = dataUrl;
         a.download = arg.name;
-        a.setAttribute('style', 'display:none!important;');
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(function() { URL.revokeObjectURL(dataUrl); }, 1E4); // 10s
+        a.dispatchEvent(new MouseEvent('click'));
+        setTimeout(() => { URL.revokeObjectURL(dataUrl); }, 1E4); // 10s
         
         // 後処理
-        arg.status = 'complate';
-        arg.endtime = Date.now();
-        arg.onupdate(arg);
-        arg.oncomplate(arg);
-        isRun = false;
-        worker.terminate();
+        setTimeout(() => {
+          arg.status = 'complate';
+          arg.endtime = Date.now();
+          arg.onupdate(arg);
+          arg.oncomplate(arg);
+          isRun = false;
+          worker.terminate();
+        }, 0);
         break;
       }
     });
@@ -212,10 +223,11 @@
     // 備考：oncomplate()呼び出しから実際のダウンロードがブラウザ上で発生するまでに、
     //       僅かなタイムラグが発生する可能性があります。
     //       実際のダウンロードがブラウザで開始するまで、ページをクローズしないで下さい。
-    //       ダウンロードの開始をJavaScriptから確認する方法を私は発見できていません。
-    //       alert()の応答を待つのが現状の最も無難な解決策です。
     // 備考：urlsのファイル名に重複がある場合、最後のファイルのみ保存します。
     //       namesを指定して明示的にファイル名を指示することで回避できます。
+    // 備考：urlsにBlobを使用することができます。
+    //       その場合、ファイル名は。nameプロパティの値を使用します。
+    // 備考：ファイル名が見つからない場合、最終的にインデックスの数値を使用します。
     // 備考：データの取得に失敗した場合、空ファイルを保存します。
     //       これには、データ取得に失敗したことを明示的に示す意味合いがあります。
   };
@@ -226,10 +238,10 @@
     if (location.hostname == 'example.com') {
       // ...
     } else {
-      alert('ダウンロード設定の記述が漏れています');
+      alert('Missing download settings');
     }
     // ↑サイト毎で処理を追記↑
   });
   
-  //alert('読み込み完了');
+  //alert('Loading completed');
 })();
