@@ -2,22 +2,25 @@
 // @name        Download_files_with_ZIP
 // @name:en     Download files with ZIP
 // @name:ja     ZIPでファイルをまとめてダウンロード
-// @description [Alt+Shift+D]のショートカットキーでページのファイルをまとめてダウンロードします。
+// @description     Use the [Alt+Shift+D] shortcut keys to download files with ZIP.
+// @description:en  Use the [Alt+Shift+D] shortcut keys to download files with ZIP.
+// @description:ja  [Alt+Shift+D]のショートカットキーでZIPでファイルをまとめてダウンロードします。
 // @see         ↓要対象ページURL追加↓
 // @@match      *://example.com/*
 // @see         ↑要対象ページURL追加↑
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License
 // @see         https://opensource.org/licenses/MIT
-// @version     2.0.0
+// @version     2.0.1
 // @see         1.0.0 - 20211013 - 初版
 // @see         2.0.0 - 20211015 - WebWorker対応（高速化対応）
 // @require     https://cdn.jsdelivr.net/npm/hotkeys-js@3.8.1/dist/hotkeys.min.js
-// @require     https://cdn.jsdelivr.net/npm/jszip@3.5.0/dist/jszip.js
 // @grant       GM.xmlHttpRequest
 // ==/UserScript==
 
 (function() {
+  'use strict';
+  
   // 進歩表示
   const box = document.createElement('div');
   box.setAttribute('style', `
@@ -36,7 +39,7 @@
     font-family: monospace, monospace;
     white-space: pre;
   `);
-  function drawProgress(text) {
+  const drawProgress = (text) => {
     if (!box.parentNode && text) {
       document.body.appendChild(box);
     }
@@ -47,142 +50,186 @@
     }
   };
   
-  // ZIPダウンロード
+  // 更新イベント
+  const onDefaultUpdate = (arg) => {
+    switch (arg.status) {
+    case 'ready':
+      drawProgress(' ');
+      break;
+    case 'download': 
+      const len = (arg.urls.length+'').length;
+      drawProgress('Download: '+(Array(len).join(' ')+arg.count).slice(-len)+'/'+arg.urls.length);
+      break;
+    case 'compress': 
+      drawProgress('Compress: '+(Array(3).join(' ')+Math.floor(arg.percent)).slice(-3)+'%');
+      break;
+    case 'complate':
+      drawProgress();
+      break;
+    }
+  };
+  
+  // 完了イベント
+  const onDefaultComplate = (arg) => {
+    const second = Math.floor((arg.endtime - arg.starttime) / 1000);
+    alert('Download complete\n\n'
+         +arg.name+'\n'
+         +arg.count+'/'+arg.urls.length+':'+arg.error+' - '+second+'s');
+    arg.close && window.close();
+  };
+  
+  /**
+   * ZIPダウンロード
+   * @param {Object} arg - 引数
+   * in     {string} arg.name - ZIPファイルのファイル名
+   * in     {string[]} arg.urls - ダウンロードファイルのURL
+   * in/out {string[]} arg.names - ダウンロードファイルのファイル名
+   * in/out {Function} arg.onupdate - 更新時のコールバック関数（例：(arg) => {}）
+   * in/out {Function} arg.oncomplate - 完了時のコールバック関数（例：(arg) => {}）
+   * in     {boolean} arg.close - ダウンロード完了後にタブをクローズする
+   *    out {string} arg.status - 進歩状態
+   *    out {number} arg.count - ダウンロード件数
+   *    out {number} arg.error - ダウンロード失敗件数
+   *    out {number} arg.percent - 圧縮完了率
+   *    out {Date} arg.starttime - 開始時間
+   *    out {Date} arg.endtime - 終了時間
+   * @return 実行有無
+   *         同一ページ内での並列実行は許可されません。
+   */
+  let isRun = false;
   async function downloadZipAsync(arg) {
-    drawProgress(' ');
-    arg.startTime = new Date().getTime();
+    // 並列実行を防止
+    if (isRun) {
+      return false;
+    }
+    isRun = true;
+    
+    // 前処理
+    arg.status = 'ready';
+    arg.starttime = Date.now();
+    arg.onupdate = arg.onupdate || onDefaultUpdate;
+    arg.oncomplate = arg.oncomplate || onDefaultComplate;
+    arg.onupdate(arg);
     
     // WebWorker作成
     const code = `
-    importScripts('https://cdn.jsdelivr.net/npm/jszip@3.5.0/dist/jszip.js');
-    
-    const zip = new JSZip();
-    
-    self.addEventListener('message', async function(event) {
-      const data = event.data;
-      switch (data.command) {
-      case 'file':
-        if (data.name) {
+      importScripts('https://cdn.jsdelivr.net/npm/jszip@3.5.0/dist/jszip.min.js');
+
+      const zip = new JSZip();
+      self.addEventListener('message', async function(event) {
+        const data = event.data;
+        switch (data.command) {
+        case 'file':
           zip.file(data.name, data.buffer);
+          break;
+        case 'generate':
+          const buffer = await zip.generateAsync({type:'arraybuffer'}, function(metadata) {
+            self.postMessage({command:'progress', percent:metadata.percent});
+          });
+          self.postMessage({command:'complate', buffer:buffer}, [buffer]);
+          break;
         }
-        break;
-      case 'generate':
-        const buffer = await zip.generateAsync({type:'arraybuffer'}, function(metadata) {
-          self.postMessage({command:'progress', percent:metadata.percent});
-        });
-        self.postMessage({command:'complate', buffer:buffer}, [buffer]);
-        break;
-      }
-    });
+      });
     `;
     const workerUrl = URL.createObjectURL(new Blob([code]));
     const worker = new Worker(workerUrl);
-    window.URL.revokeObjectURL(workerUrl)
-    
-    arg.count = 0;
-    arg.error = 0;
-    const len = (arg.urls.length+'').length;
-    function onDownload(file) {
-      arg.count++;
-      !file.data && arg.error++;
-      drawProgress('Download: '+(Array(len).join(' ')+arg.count).slice(-len)+'/'+arg.urls.length);
-      worker.postMessage({command:'file', name:file.name, buffer:file.data}, file.data ? [file.data] : null);
-    };
+    URL.revokeObjectURL(workerUrl)
     
     // ファイルのダウンロード
+    arg.status = 'download';
+    arg.count = 0;
+    arg.error = 0;
+    arg.onupdate(arg);
+    const onDownload = (file) => {
+      arg.status = 'download';
+      arg.count++;
+      !file.data && arg.error++;
+      arg.onupdate(arg);
+      if (file.name && file.data) {
+        worker.postMessage({command:'file', name:file.name, buffer:file.data}, [file.data]);
+      } else if (file.name) {
+        worker.postMessage({command:'file', name:file.name, buffer:null});
+      }
+    };
     arg.names = arg.names || [];
-    await Promise.all(
-      arg.urls.map((url, i) => {
-        const name = arg.names[i] || url.slice(url.lastIndexOf('/') + 1);
-        arg.names[i] = name;
-        return new Promise((resolve, reject) => {
-          GM.xmlHttpRequest({
-            method: 'GET',
-            url: url,
-            responseType: 'arraybuffer',        // Greasemonkeyは、blob非対応
-            onload: function(xhr) {
-              const isSuccess = 200 <= xhr.status && xhr.status < 300 || xhr.status === 304;
-              if (isSuccess) {
-                onDownload({name:name, data:xhr.response});
-              } else {
-                onDownload({name:name, data:null});
-              }
-              resolve();
-            },
-            onerror: function() { onDownload({name:name, data:null}); resolve(); },
-            onabort: function() { onDownload({name:name, data:null}); resolve(); },
-            ontimeout: function() { onDownload({name:name, data:null}); resolve(); }
-          });
+    await Promise.all(arg.urls.map((url, i) => {
+      const name = arg.names[i] = arg.names[i] || url.slice(url.lastIndexOf('/') + 1);
+      return new Promise((resolve, reject) => {
+        GM.xmlHttpRequest({
+          method: 'GET',
+          url: url,
+          responseType: 'arraybuffer',
+          onload: function(xhr) {
+            const isSuccess = 200 <= xhr.status && xhr.status < 300 || xhr.status === 304;
+            onDownload({name:name, data:(isSuccess ? xhr.response : null)});
+            resolve();
+          },
+          onerror: function() { onDownload({name:name, data:null}); resolve(); },
+          onabort: function() { onDownload({name:name, data:null}); resolve(); },
+          ontimeout: function() { onDownload({name:name, data:null}); resolve(); }
         });
-      })
-    );
+      });
+    }));
     
-    // ZIPファイルの圧縮
-    worker.addEventListener('message', async function(event) {
+    // ファイルの圧縮
+    arg.status = 'compress';
+    arg.percent = 0;
+    arg.onupdate(arg);
+    worker.addEventListener('message', function(event) {
       const data = event.data;
       switch (data.command) {
       case 'progress':
-        drawProgress('Compress: '+(Array(3).join(' ')+Math.floor(data.percent)).slice(-3)+'%');
+        arg.status = 'compress';
+        arg.percent = data.percent;
+        arg.onupdate(arg);
         break;
       case 'complate':
-        // ZIPファイルのダウンロード
+        // ZIPのダウンロード
         const dataUrl = URL.createObjectURL(new Blob([data.buffer]));
-        const link = document.createElement('a');
-        link.href = dataUrl;
-        link.download = arg.name;
-        link.setAttribute('style', 'display:none;');
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = arg.name;
+        a.setAttribute('style', 'display:none!important;');
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function() { URL.revokeObjectURL(dataUrl); }, 1E4); // 10s
         
         // 後処理
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        window.URL.revokeObjectURL(dataUrl);
-        drawProgress();
-        arg.endTime = new Date().getTime();
-        arg.oncomplate && arg.oncomplate(arg);
+        arg.status = 'complate';
+        arg.endtime = Date.now();
+        arg.onupdate(arg);
+        arg.oncomplate(arg);
+        isRun = false;
         worker.terminate();
         break;
       }
     });
     worker.postMessage({command:'generate'});
     
-    // 備考：onComplate()呼び出しから実際のダウンロードがブラウザ上で発生するまでに、
+    return true;
+    
+    // 備考：oncomplate()呼び出しから実際のダウンロードがブラウザ上で発生するまでに、
     //       僅かなタイムラグが発生する可能性があります。
     //       実際のダウンロードがブラウザで開始するまで、ページをクローズしないで下さい。
-    // 備考：urlsのファイル名に重複がある場合、後あるファイルのみ保存します。
+    //       ダウンロードの開始をJavaScriptから確認する方法を私は発見できていません。
+    //       alert()の応答を待つのが現状の最も無難な解決策です。
+    // 備考：urlsのファイル名に重複がある場合、最後のファイルのみ保存します。
     //       namesを指定して明示的にファイル名を指示することで回避できます。
-    // 備考：データの取得に失敗した場合、空のファイルを保存します。
-    //       これには、データ取得に失敗したことを明示する意味合いがあります。
-    // 備考：ファイル名が重複している場合、最後のファイルのみ保存します。
+    // 備考：データの取得に失敗した場合、空ファイルを保存します。
+    //       これには、データ取得に失敗したことを明示的に示す意味合いがあります。
   };
   
   // ショートカットキー設定
-  let isRun = false;
   hotkeys('alt+shift+d', function(event, handler) {
-    // 重複実行を排除
-    if (isRun) {
-      return;
-    }
-    isRun = true;
-    
-    // 標準関数
-    const onDefaultComplate = function(arg) {
-      const second = Math.floor((arg.endTime - arg.startTime)/1000);
-      alert('ダウンロード完了\n\n'+arg.name+' ('+arg.count+'/'+arg.urls.length+':'+arg.error+', '+second+'s)');
-      arg.close && window.close();
-      isRun = false;
-    };
-    
     // ↓サイト毎で処理を追記↓
     if (location.hostname == 'example.com') {
       // ...
     } else {
-      alert(GM.info.script.name+'.user.js\n\nダウンロード設定の記述が漏れています。');
-      isRun = false;
+      alert('ダウンロード設定の記述が漏れています');
     }
     // ↑サイト毎で処理を追記↑
   });
   
-  //alert('ユーザスクリプトの読み込みチェック用');
+  //alert('読み込み完了');
 })();
