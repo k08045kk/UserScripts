@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name        Download_files_with_ZIP
+// @name        MatometeDownload
 // @name:en     Download files with ZIP
 // @name:ja     ZIPでファイルをまとめてダウンロード
 // @description     Use the [Alt+Shift+D] shortcut keys to download files with ZIP.
@@ -11,10 +11,11 @@
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License
 // @see         https://opensource.org/licenses/MIT
-// @version     3.1.2
+// @version     3.2.0
 // @see         1.0.0 - 20210113 - 初版
 // @see         2.0.0 - 20210115 - WebWorker対応（高速化対応）
 // @see         3.0.0 - 20210116 - WebWorker/NoWorker対応（NoScript対応）
+// @see         3.2.0 - 20210117 - Download_files_with_ZIP.user.js → MatometeDownload.user.js
 // @require     https://cdn.jsdelivr.net/npm/jszip@3.5.0/dist/jszip.js
 // @require     https://cdn.jsdelivr.net/npm/hotkeys-js@3.8.1/dist/hotkeys.min.js
 // @grant       GM.xmlHttpRequest
@@ -117,7 +118,6 @@
    * in     {boolean} arg.close - 完了時にタブをクローズする（Greasemonkeyは、対象外）
    * in     {number} arg.closetime - クローズまでの遅延時間（ms）
    * @return 実行有無
-   *         同一ページ内での並列実行は許可されません。
    */
   let isRun = false;
   function downloadFilesZipAsync(arg) {
