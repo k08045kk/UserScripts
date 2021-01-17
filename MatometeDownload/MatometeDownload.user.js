@@ -11,12 +11,14 @@
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License
 // @see         https://opensource.org/licenses/MIT
-// @version     3.2.0
+// @see         https://www.bugbugnow.net/2021/01/download-files-with-zip.html
+// @version     3.3.0
 // @see         1.0.0 - 20210113 - 初版
 // @see         2.0.0 - 20210115 - WebWorker対応（高速化対応）
 // @see         3.0.0 - 20210116 - WebWorker/NoWorker対応（NoScript対応）
 // @see         3.2.0 - 20210117 - Download_files_with_ZIP.user.js → MatometeDownload.user.js
-// @require     https://cdn.jsdelivr.net/npm/jszip@3.5.0/dist/jszip.js
+// @see         3.3.0 - 20210118 - リリース版
+// @require     https://cdn.jsdelivr.net/npm/jszip@3.5.0/dist/jszip.min.js
 // @require     https://cdn.jsdelivr.net/npm/hotkeys-js@3.8.1/dist/hotkeys.min.js
 // @grant       GM.xmlHttpRequest
 // @grant       window.close
@@ -118,6 +120,7 @@
    * in     {boolean} arg.close - 完了時にタブをクローズする（Greasemonkeyは、対象外）
    * in     {number} arg.closetime - クローズまでの遅延時間（ms）
    * @return 実行有無
+   *         同一ページ内での並列実行は許可されていません。
    */
   let isRun = false;
   function downloadFilesZipAsync(arg) {
@@ -235,6 +238,8 @@
           arg.percent = metadata.percent;
           arg.onupdate(arg);
         });
+        arg.percent = 100;
+        arg.onupdate(arg);
         
         await downloadZipAsync(new Blob([buffer]));
       } catch (e) {
@@ -274,6 +279,7 @@
             const buffer = await zip.generateAsync(option, function(metadata) {
               self.postMessage({command:'progress', percent:metadata.percent});
             });
+            self.postMessage({command:'progress', percent:100});
             self.postMessage({command:'complate', buffer:buffer}, [buffer]);
             break;
           default:
@@ -354,11 +360,22 @@
   hotkeys(shortcut, function(event, handler) {
     // ↓↓↓ Add processing for each site ↓↓↓
     if (location.hostname == 'example.com') {
-      // ...
+      const urls = [...document.querySelectorAll('body img')].map(img => img.src);
+      const file = new File(['Download list.\n\n'+urls.join('\n')], 'list.txt', {type:'text/plain'});
+      urls.push(file);
+      downloadFilesZipAsync({
+        name: document.title.trim(),
+        urls: urls, 
+        //names: [...document.querySelectorAll('body img')].map((img, i) => i+'.jpg'),
+        //worker: false,
+        //level: 6,
+        //folder: true,
+        //empty: false,
+      });
     } else {
       alert('Missing download settings');
     }
     // ↑↑↑ Add processing for each site ↑↑↑
   });
-  console.log(GM.info.scriptHandler, 'shortcut', shortcut);
+  console.log('shortcut', shortcut);
 })();
