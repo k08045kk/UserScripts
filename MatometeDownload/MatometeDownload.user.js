@@ -11,7 +11,7 @@
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License
 // @see         https://opensource.org/licenses/MIT
-// @version     3.1.1
+// @version     3.1.2
 // @see         1.0.0 - 20210113 - 初版
 // @see         2.0.0 - 20210115 - WebWorker対応（高速化対応）
 // @see         3.0.0 - 20210116 - WebWorker/NoWorker対応（NoScript対応）
@@ -25,8 +25,6 @@
   'use strict';
   
   // 進歩表示
-  const root = document.createElement('div');
-  const shadow = root.attachShadow({mode:'closed'});
   const box = document.createElement('div');
   box.setAttribute('style', `
     z-index: 2147483647;
@@ -44,7 +42,8 @@
     font-family: monospace, monospace;
     white-space: pre;
   `);
-  shadow.appendChild(box)
+  const root = document.createElement('div');
+  root.attachShadow({mode:'closed'}).appendChild(box)
   const drawProgress = (text) => {
     if (!root.parentNode && text) {
       document.body.appendChild(root);
@@ -64,7 +63,7 @@
       break;
     case 'download': 
       const len = (arg.urls.length+'').length;
-      drawProgress('Download: '+(Array(len).join(' ')+arg.count).slice(-len)+'/'+arg.urls.length);
+      drawProgress('Download: '+(Array(len).join(' ')+arg.success).slice(-len)+'/'+arg.urls.length);
       break;
     case 'compress': 
       drawProgress('Compress: '+(Array(3).join(' ')+Math.floor(arg.percent)).slice(-3)+'%');
@@ -87,29 +86,36 @@
   const onDefaultComplate = (arg) => {
     const title = 'Download '+arg.status;
     const second = Math.floor((arg.endtime - arg.starttime) / 1000);
-    const info = arg.count+'/'+arg.urls.length+':'+arg.error+' | '+second+'s';
+    const info = arg.success+'/'+arg.urls.length+':'+arg.failure+' | '+second+'s';
     console.log('complate', arg);
-    !arg.alert && alert(title+'\n\n'+arg.name+'\n'+info);
-    arg.close && setTimeout(function() { window.close(); }, arg.closetime || 1000);
+    !arg.alert && alert(title+'\n\n'+arg.name+'.zip\n'+info);
+    arg.close && setTimeout(() => window.close(), arg.closetime || 1000);
   };
   
   /**
    * ZIPダウンロード
+   * ファイルのダウンロード → ファイルのZIP圧縮 → ZIPファイルのダウンロード
    * @param {Object} arg - 引数
-   * in     {string} arg.name - ZIPファイルのファイル名
+   * in     {string} arg.name - ZIPファイルのファイル名（拡張子を含まない）
    * in     {string[]} arg.urls - ダウンロードファイルのURL
-   *                              または、Blob（対象ページのスクリプト有効時）
-   * in/out {string[]} arg.names - ダウンロードファイルのファイル名
+   *                              または、Blob（対象ページのJavaScript有効時）
+   * in/out {string[]} arg.names - ダウンロードファイルのファイル名（拡張子を含む）
+   *    out {boolean[]} arg.results - ダウンロードの結果
    * in/out {Function} arg.onupdate - 更新時のコールバック関数（例：(arg) => {}）
    * in/out {Function} arg.oncomplate - 完了時のコールバック関数（例：(arg) => {}）
    * in/out {boolean} arg.worker - WebWorkerを使用する
    * in/out {number} [arg.level=0] - 圧縮レベル（0-9, 0:無圧縮/1:最高速度/9:最高圧縮）
    *    out {string} arg.status - 進歩状態
-   *    out {number} arg.count - ダウンロード件数
-   *    out {number} arg.error - ダウンロード失敗件数
-   *    out {number} arg.percent - 圧縮完了率
+   *    out {string} arg.substatus - エラー以前の進歩状態
+   *    out {string} arg.message - エラーメッセージ
+   *    out {number} arg.success - ダウンロード成功件数
+   *    out {number} arg.failure - ダウンロード失敗件数
+   *    out {number} arg.percent - 圧縮の進歩（0-100の実数）
    *    out {Date} arg.starttime - 開始時間
    *    out {Date} arg.endtime - 終了時間
+   * in     {boolean} arg.alert - 完了時にアラートを表示する
+   * in     {boolean} arg.close - 完了時にタブをクローズする（Greasemonkeyは、対象外）
+   * in     {number} arg.closetime - クローズまでの遅延時間（ms）
    * @return 実行有無
    *         同一ページ内での並列実行は許可されません。
    */
@@ -124,12 +130,12 @@
     // 前処理
     arg.status = 'ready';
     arg.starttime = Date.now();
-    arg.count = 0;
-    arg.error = 0;
-    arg.percent = 0;
-    arg.level = arg.level || 0;
     arg.onupdate = arg.onupdate || onDefaultUpdate;
     arg.oncomplate = arg.oncomplate || onDefaultComplate;
+    arg.level = arg.level || 0;
+    arg.success = 0;
+    arg.failure = 0;
+    arg.percent = 0;
     arg.onupdate(arg);
     
     // ファイルのダウンロード
@@ -138,29 +144,32 @@
       const worker = obj instanceof Worker ? obj : null;
       
       arg.status = 'download';
-      arg.onupdate(arg);
-      const onDownload = (name, data) => {
-        arg.count++;
-        !data && arg.error++;
-        arg.onupdate(arg);
-        zip && zip.file(name, data);
-        worker && worker.postMessage({command:'file', name:name, buffer:data}, data ? [data] : null);
-      };
-      
       arg.names = arg.names || [];
-      await Promise.all(arg.urls.map((url, i) => {
+      arg.results = [];
+      const onDownload = (name, data) => {
+        arg.success++;
+        !data && arg.failure++;
+        arg.onupdate(arg);
+        if (arg.empty !== false || data) {
+          zip && zip.file(name, data);
+          worker && worker.postMessage({command:'file', name:name, buffer:data}, data ? [data] : null);
+        }
+      };
+      const promises = arg.urls.map((url, i) => {
         const name = arg.names[i] = arg.names[i] 
                                  || url.name 
                                  || (typeof url == 'string' && url.slice(url.lastIndexOf('/') + 1)) 
                                  || ''+i;
         return new Promise((resolve, reject) => {
-          const failure = () => { onDownload(name, null); resolve(); };
+          const success = (data) => { onDownload(name, data); arg.results[i]=!!data; resolve(); };
+          const failure = () => success();
           try {
             if (url instanceof Blob) {
               // ページの内部データ
               url.arrayBuffer().then((buffer) => {
-                onDownload(name, buffer);
-                resolve();
+                success(buffer instanceof ArrayBuffer ? buffer : null);
+                // 対策：JavaScript無効時にJSZip内部でエラーする
+                // see https://bugzilla.mozilla.org/show_bug.cgi?id=1427470
               });
               // 補足：Firefox + NoScript 時は、使用禁止（エラーとなる）
             } else if (typeof url == 'string') {
@@ -171,8 +180,7 @@
                 responseType: 'arraybuffer',
                 onload: function(xhr) {
                   const isSuccess = 200 <= xhr.status && xhr.status < 300 || xhr.status === 304;
-                  onDownload(name, isSuccess ? xhr.response : null);
-                  resolve();
+                  success(isSuccess ? xhr.response : null);
                 },
                 onerror: failure,
                 onabort: failure,
@@ -182,7 +190,9 @@
             } else { failure(); }
           } catch (e) { failure(); }
         });
-      }));
+      });
+      arg.onupdate(arg);
+      await Promise.all(promises);
     };
     
     // 完了処理
@@ -203,18 +213,18 @@
       const dataUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = dataUrl;
-      a.download = arg.name;
+      a.download = arg.name+'.zip';
       a.dispatchEvent(new MouseEvent('click'));
       setTimeout(() => { URL.revokeObjectURL(dataUrl); }, 1E4); // 10s
       complate();
     };
     
     // Workerなしの処理
-    const noworker = async function() {
+    const noworkerAsync = async function() {
       arg.worker = false;
       try {
         const zip = new JSZip();
-        await downloadFilesAsync(zip);
+        await downloadFilesAsync(arg.folder ? zip.folder(arg.name) : zip);
         
         arg.status = 'compress';
         arg.onupdate(arg);
@@ -233,7 +243,7 @@
       }
     };
     if (arg.worker === false) {
-      noworker();
+      noworkerAsync();
       return true;
     }
     arg.worker = true;
@@ -242,6 +252,7 @@
     const code = `
       importScripts('https://cdn.jsdelivr.net/npm/jszip@3.5.0/dist/jszip.min.js');
       const zip = new JSZip();
+      let folder = zip;
       
       self.addEventListener('message', async function(event) {
         const data = event.data;
@@ -249,9 +260,12 @@
           switch (data.command) {
           case 'ready':
             self.postMessage({command:'go'});
+            if (data.name) {
+              folder = zip.folder(data.name);
+            }
             break;
           case 'file':
-            zip.file(data.name, data.buffer);
+            folder.file(data.name, data.buffer);
             break;
           case 'generate':
             const option = data.level 
@@ -278,7 +292,7 @@
       worker = new Worker(workerUrl);
     } catch (e) {
       // Chrome + NoScript
-      noworker();
+      noworkerAsync();
       return true;
     } finally {
       URL.revokeObjectURL(workerUrl);
@@ -286,7 +300,7 @@
     worker.addEventListener('error', function(event) {
       if (arg.status == 'ready') {
         // Firefox + NoScript
-        noworker();
+        noworkerAsync();
       } else {
         complate('error', event && event.message || '');
       }
@@ -316,7 +330,7 @@
         break;
      }
     });
-    worker.postMessage({command:'ready'});
+    worker.postMessage({command:'ready', name:(arg.folder ? arg.name : null)});
     
     return true;
     
@@ -327,14 +341,12 @@
     //       実際のダウンロードがブラウザで開始するまで、ページをクローズしないで下さい。
     // 備考：urlsのファイル名に重複がある場合、最後のファイルのみ保存します。
     //       namesを指定して明示的にファイル名を指示することで回避できます。
-    // 備考：urlsにBlobを使用できます。その場合、ファイル名はnameプロパティの値を使用します。
+    // 備考：urlsにBlobを使用できます。その場合、ファイル名はnameプロパティを使用します。
     // 備考：ファイル名が見つからない場合、最終的にインデックスの数値を使用します。
     // 備考：データの取得に失敗した場合、空ファイルを保存します。
-    // 備考：onupdateでarg変数は、変更不可です。変更した場合、問題が発生する可能性があります。
     //       これには、データ取得に失敗したことを明示的に示す意味合いがあります。
-    // 備考：対象ページがスクリプト無効の場合、WebWorkerが動作しない。
-    // 備考：Firefox限定でスクリプト無効の場合、BlobのデータでJSZipがエラーする。
-    //       Firefoxの問題: https://bugzilla.mozilla.org/show_bug.cgi?id=1427470
+    // 備考：onupdateでarg変数は、変更不可です。変更した場合、問題が発生する可能性があります。
+    // 備考：対象ページがJavaScript無効の場合、WebWorkerは動作しません。
   };
   
   // ショートカットキー設定
