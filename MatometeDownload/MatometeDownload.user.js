@@ -5,19 +5,20 @@
 // @description     Use the [Alt+Shift+D] shortcut keys to download files with ZIP.
 // @description:en  Use the [Alt+Shift+D] shortcut keys to download files with ZIP.
 // @description:ja  [Alt+Shift+D]のショートカットキーでZIPでファイルをまとめてダウンロードします。
-// @see         ↓要対象ページURL追加↓
+// @see         ↓↓↓ Add target page URL ↓↓↓
 // @@match      *://example.com/*
-// @see         ↑要対象ページURL追加↑
+// @see         ↑↑↑ Add target page URL ↑↑↑
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License
 // @see         https://opensource.org/licenses/MIT
-// @version     3.1.0
-// @see         1.0.0 - 20211013 - 初版
-// @see         2.0.0 - 20211015 - WebWorker対応（高速化対応）
-// @see         3.0.0 - 20211016 - WebWorker/NoWorker対応（NoScript対応）
-// @require     https://cdn.jsdelivr.net/npm/jszip@3.5.0/dist/jszip.min.js
+// @version     3.1.1
+// @see         1.0.0 - 20210113 - 初版
+// @see         2.0.0 - 20210115 - WebWorker対応（高速化対応）
+// @see         3.0.0 - 20210116 - WebWorker/NoWorker対応（NoScript対応）
+// @require     https://cdn.jsdelivr.net/npm/jszip@3.5.0/dist/jszip.js
 // @require     https://cdn.jsdelivr.net/npm/hotkeys-js@3.8.1/dist/hotkeys.min.js
 // @grant       GM.xmlHttpRequest
+// @grant       window.close
 // ==/UserScript==
 
 (function() {
@@ -74,7 +75,8 @@
     case 'error':
     default:
       const status = arg.substatus || arg.status;
-      const message = JSON.stringify(arg, null, 2);
+      const message = arg.message;
+      console.log('error', arg);
       alert('error ('+status+')\n\n'+message);
       drawProgress();
       break;
@@ -83,12 +85,12 @@
   
   // 完了イベント
   const onDefaultComplate = (arg) => {
-    const title = arg.status == 'complate' ? 'Download complete' : 'Download error';
+    const title = 'Download '+arg.status;
     const second = Math.floor((arg.endtime - arg.starttime) / 1000);
-    alert(title+'\n\n'
-         //+arg.name+'\n'
-         //+arg.count+'/'+arg.urls.length+':'+arg.error+' | '+second+'s');
-         +JSON.stringify(arg, null, 2));
+    const info = arg.count+'/'+arg.urls.length+':'+arg.error+' | '+second+'s';
+    console.log('complate', arg);
+    !arg.alert && alert(title+'\n\n'+arg.name+'\n'+info);
+    arg.close && setTimeout(function() { window.close(); }, arg.closetime || 1000);
   };
   
   /**
@@ -122,42 +124,42 @@
     // 前処理
     arg.status = 'ready';
     arg.starttime = Date.now();
+    arg.count = 0;
+    arg.error = 0;
+    arg.percent = 0;
     arg.level = arg.level || 0;
     arg.onupdate = arg.onupdate || onDefaultUpdate;
     arg.oncomplate = arg.oncomplate || onDefaultComplate;
     arg.onupdate(arg);
-    let zip = null;
-    let worker = null;
     
     // ファイルのダウンロード
-    const downloadFilesAsync = async function() {
+    const downloadFilesAsync = async function(obj) {
+      const zip = obj instanceof JSZip ? obj : null;
+      const worker = obj instanceof Worker ? obj : null;
+      
       arg.status = 'download';
-      arg.count = 0;
-      arg.error = 0;
       arg.onupdate(arg);
-      const onDownload = (file) => {
+      const onDownload = (name, data) => {
         arg.count++;
-        !file.data && arg.error++;
+        !data && arg.error++;
         arg.onupdate(arg);
-        if (file.name) {
-          if (zip) {
-            zip.file(file.name, file.data);
-          } else if (file.data) {
-            worker.postMessage({command:'file', name:file.name, buffer:file.data}, [file.data]);
-          } else {
-            worker.postMessage({command:'file', name:file.name, buffer:null});
-          }
-        }
+        zip && zip.file(name, data);
+        worker && worker.postMessage({command:'file', name:name, buffer:data}, data ? [data] : null);
       };
+      
       arg.names = arg.names || [];
       await Promise.all(arg.urls.map((url, i) => {
-        const name = arg.names[i] = arg.names[i] || url.name || (typeof url == 'string' && url.slice(url.lastIndexOf('/') + 1)) || ''+i;
+        const name = arg.names[i] = arg.names[i] 
+                                 || url.name 
+                                 || (typeof url == 'string' && url.slice(url.lastIndexOf('/') + 1)) 
+                                 || ''+i;
         return new Promise((resolve, reject) => {
+          const failure = () => { onDownload(name, null); resolve(); };
           try {
             if (url instanceof Blob) {
               // ページの内部データ
               url.arrayBuffer().then((buffer) => {
-                onDownload({name:name, data:buffer});
+                onDownload(name, buffer);
                 resolve();
               });
               // 補足：Firefox + NoScript 時は、使用禁止（エラーとなる）
@@ -169,23 +171,16 @@
                 responseType: 'arraybuffer',
                 onload: function(xhr) {
                   const isSuccess = 200 <= xhr.status && xhr.status < 300 || xhr.status === 304;
-                  onDownload({name:name, data:(isSuccess ? xhr.response : null)});
+                  onDownload(name, isSuccess ? xhr.response : null);
                   resolve();
                 },
-                onerror: function() { onDownload({name:name, data:null}); resolve(); },
-                onabort: function() { onDownload({name:name, data:null}); resolve(); },
-                ontimeout: function() { onDownload({name:name, data:null}); resolve(); }
+                onerror: failure,
+                onabort: failure,
+                ontimeout: failure
               });
-              // 補足：Data URLは、使用禁止
-              // 補足：Blob URLは、使用禁止
-            } else {
-              onDownload({name:name, data:null});
-              resolve();
-            }
-          } catch (e) {
-            onDownload({name:name, data:null});
-            resolve();
-          }
+              // 補足：Data URL/Blob URLは、使用禁止
+            } else { failure(); }
+          } catch (e) { failure(); }
         });
       }));
     };
@@ -218,17 +213,14 @@
     const noworker = async function() {
       arg.worker = false;
       try {
-        zip = new JSZip();
-        await downloadFilesAsync();
+        const zip = new JSZip();
+        await downloadFilesAsync(zip);
         
         arg.status = 'compress';
-        arg.percent = 0;
         arg.onupdate(arg);
-        const option = {type:'arraybuffer'};
-        if (arg.level) {
-          option.compression = 'DEFLATE';
-          option.compressionOptions = {level:arg.level};
-        }
+        const option = arg.level 
+                     ? {type:'arraybuffer'}
+                     : {type:'arraybuffer', compression:'DEFLATE', compressionOptions:{level:arg.level}};
         const buffer = await zip.generateAsync(option, (metadata) => {
           arg.percent = metadata.percent;
           arg.onupdate(arg);
@@ -248,7 +240,7 @@
     
     // WebWorker作成
     const code = `
-      self.importScripts('https://cdn.jsdelivr.net/npm/jszip@3.5.0/dist/jszip.min.js');
+      importScripts('https://cdn.jsdelivr.net/npm/jszip@3.5.0/dist/jszip.min.js');
       const zip = new JSZip();
       
       self.addEventListener('message', async function(event) {
@@ -262,11 +254,9 @@
             zip.file(data.name, data.buffer);
             break;
           case 'generate':
-            const option = {type:'arraybuffer'};
-            if (data.level) {
-              option.compression = 'DEFLATE';
-              option.compressionOptions = {level:data.level};
-            }
+            const option = data.level 
+                         ? {type:'arraybuffer'}
+                         : {type:'arraybuffer', compression:'DEFLATE', compressionOptions:{level:data.level}};
             const buffer = await zip.generateAsync(option, function(metadata) {
               self.postMessage({command:'progress', percent:metadata.percent});
             });
@@ -283,6 +273,7 @@
       });
     `;
     const workerUrl = URL.createObjectURL(new Blob([code]));
+    let worker = null;
     try {
       worker = new Worker(workerUrl);
     } catch (e) {
@@ -305,10 +296,8 @@
       const data = event.data;
       switch (data.command) {
       case 'go':
-        await downloadFilesAsync();
-        
+        await downloadFilesAsync(worker);
         arg.status = 'compress';
-        arg.percent = 0;
         arg.onupdate(arg);
         worker.postMessage({command:'generate', level:arg.level});
         break;
@@ -338,26 +327,26 @@
     //       実際のダウンロードがブラウザで開始するまで、ページをクローズしないで下さい。
     // 備考：urlsのファイル名に重複がある場合、最後のファイルのみ保存します。
     //       namesを指定して明示的にファイル名を指示することで回避できます。
-    // 備考：urlsにBlobを使用することができます。
-    //       その場合、ファイル名は。nameプロパティの値を使用します。
+    // 備考：urlsにBlobを使用できます。その場合、ファイル名はnameプロパティの値を使用します。
     // 備考：ファイル名が見つからない場合、最終的にインデックスの数値を使用します。
     // 備考：データの取得に失敗した場合、空ファイルを保存します。
+    // 備考：onupdateでarg変数は、変更不可です。変更した場合、問題が発生する可能性があります。
     //       これには、データ取得に失敗したことを明示的に示す意味合いがあります。
     // 備考：対象ページがスクリプト無効の場合、WebWorkerが動作しない。
-    // 備考：Firefox限定でスクリプト無効の場合、BlobのデータがJSZipでエラーになる。
-    //       「Can't read the data of 'test.txt'. Is it in a supported JavaScript type (String, Blob, ArrayBuffer, etc) ?」
+    // 備考：Firefox限定でスクリプト無効の場合、BlobのデータでJSZipがエラーする。
+    //       Firefoxの問題: https://bugzilla.mozilla.org/show_bug.cgi?id=1427470
   };
   
   // ショートカットキー設定
-  hotkeys('alt+shift+d', function(event, handler) {
-    // ↓サイト毎で処理を追記↓
+  const shortcut = 'alt+shift+d';
+  hotkeys(shortcut, function(event, handler) {
+    // ↓↓↓ Add processing for each site ↓↓↓
     if (location.hostname == 'example.com') {
       // ...
     } else {
       alert('Missing download settings');
     }
-    // ↑サイト毎で処理を追記↑
+    // ↑↑↑ Add processing for each site ↑↑↑
   });
-  
-  //alert('Loading completed');
+  console.log(GM.info.scriptHandler, 'shortcut', shortcut);
 })();
