@@ -9,8 +9,9 @@
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License
 // @see         https://opensource.org/licenses/MIT
-// @version     1.2.0
+// @version     2.0.0
 // @see         1.0.0 - 20211013 - 初版
+// @see         2.0.0 - 20211015 - WebWorker対応（高速化対応）
 // @require     https://cdn.jsdelivr.net/npm/hotkeys-js@3.8.1/dist/hotkeys.min.js
 // @require     https://cdn.jsdelivr.net/npm/jszip@3.5.0/dist/jszip.js
 // @grant       GM.xmlHttpRequest
@@ -51,15 +52,41 @@
     drawProgress(' ');
     arg.startTime = new Date().getTime();
     
+    // WebWorker作成
+    const code = `
+    importScripts('https://cdn.jsdelivr.net/npm/jszip@3.5.0/dist/jszip.js');
+    
     const zip = new JSZip();
+    
+    self.addEventListener('message', async function(event) {
+      const data = event.data;
+      switch (data.command) {
+      case 'file':
+        if (data.name) {
+          zip.file(data.name, data.buffer);
+        }
+        break;
+      case 'generate':
+        const buffer = await zip.generateAsync({type:'arraybuffer'}, function(metadata) {
+          self.postMessage({command:'progress', percent:metadata.percent});
+        });
+        self.postMessage({command:'complate', buffer:buffer}, [buffer]);
+        break;
+      }
+    });
+    `;
+    const workerUrl = URL.createObjectURL(new Blob([code]));
+    const worker = new Worker(workerUrl);
+    window.URL.revokeObjectURL(workerUrl)
+    
     arg.count = 0;
     arg.error = 0;
     const len = (arg.urls.length+'').length;
     function onDownload(file) {
-      !file.data && arg.error++;
       arg.count++;
+      !file.data && arg.error++;
       drawProgress('Download: '+(Array(len).join(' ')+arg.count).slice(-len)+'/'+arg.urls.length);
-      zip.file(file.name, file.data);
+      worker.postMessage({command:'file', name:file.name, buffer:file.data}, file.data ? [file.data] : null);
     };
     
     // ファイルのダウンロード
@@ -91,27 +118,34 @@
     );
     
     // ZIPファイルの圧縮
-    const blob = await zip.generateAsync({type:'blob'}, function(metadata) {
-      drawProgress('Compress: '+(Array(3).join(' ')+Math.floor(metadata.percent)).slice(-3)+'%');
+    worker.addEventListener('message', async function(event) {
+      const data = event.data;
+      switch (data.command) {
+      case 'progress':
+        drawProgress('Compress: '+(Array(3).join(' ')+Math.floor(data.percent)).slice(-3)+'%');
+        break;
+      case 'complate':
+        // ZIPファイルのダウンロード
+        const dataUrl = URL.createObjectURL(new Blob([data.buffer]));
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = arg.name;
+        link.setAttribute('style', 'display:none;');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // 後処理
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        window.URL.revokeObjectURL(dataUrl);
+        drawProgress();
+        arg.endTime = new Date().getTime();
+        arg.oncomplate && arg.oncomplate(arg);
+        worker.terminate();
+        break;
+      }
     });
-    const dataUrl = URL.createObjectURL(blob);
-    drawProgress('Compress: 100%');
-    
-    // ZIPファイルのダウンロード
-    const link = document.createElement('a');
-    link.href = dataUrl;
-    link.download = arg.name;
-    link.setAttribute('style', 'display:none;');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    // 後処理
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    window.URL.revokeObjectURL(dataUrl);
-    drawProgress();
-    arg.endTime = new Date().getTime();
-    arg.oncomplate && arg.oncomplate(arg);
+    worker.postMessage({command:'generate'});
     
     // 備考：onComplate()呼び出しから実際のダウンロードがブラウザ上で発生するまでに、
     //       僅かなタイムラグが発生する可能性があります。
