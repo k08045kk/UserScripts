@@ -11,6 +11,7 @@
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License
 // @see         https://opensource.org/licenses/MIT
+// @see         https://github.com/k08045kk/UserScripts
 // @see         https://www.bugbugnow.net/2021/01/download-files-with-zip.html
 // @version     3.3.0
 // @see         1.0.0 - 20210113 - 初版

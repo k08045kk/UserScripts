@@ -12,7 +12,7 @@
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License
 // @see         https://opensource.org/licenses/MIT
-// @see         https://github.com/k08045kk/UserScripts/RejectServiceWorker
+// @see         https://github.com/k08045kk/UserScripts
 // @see         https://www.bugbugnow.net/2020/03/Reject-to-register-a-ServiceWorker.html
 // @version     0.2.1
 // @see         0.1.0 - 20200328 - 初版
