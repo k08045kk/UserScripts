@@ -5,27 +5,27 @@
 // @description     Use the [Alt+Shift+D] shortcut keys to download files with ZIP.
 // @description:en  Use the [Alt+Shift+D] shortcut keys to download files with ZIP.
 // @description:ja  [Alt+Shift+D]のショートカットキーでZIPでファイルをまとめてダウンロードします。
-// @see         ↓↓↓ Add target page URL ↓↓↓
+// @note        ↓↓↓ Add target page URL ↓↓↓
 // @@match      *://example.com/*
-// @see         ↑↑↑ Add target page URL ↑↑↑
+// @note        ↑↑↑ Add target page URL ↑↑↑
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License
 // @see         https://opensource.org/licenses/MIT
+// @version     3.4.2
+// @note        1.0.0 - 20210113 - 初版
+// @note        2.0.0 - 20210115 - WebWorker対応（高速化対応）
+// @note        3.0.0 - 20210116 - WebWorker/NoWorker対応（NoScript対応）
+// @note        3.2.0 - 20210117 - Download_files_with_ZIP.user.js → MatometeDownload.user.js
+// @note        3.3.0 - 20210118 - リリース版
+// @note        3.4.0 - 20210131 - fix Blobを保存できない問題修正（Firefox+Greasemonkey+NoScript）
+// @note        3.4.1 - 20210131 - fix arg.levelオプションを修正
+// @note        3.4.2 - 20210131 - fix I/F修正等
 // @see         https://github.com/k08045kk/UserScripts
 // @see         https://www.bugbugnow.net/2021/01/download-files-with-zip.html
-// @version     3.4.2
-// @see         1.0.0 - 20210113 - 初版
-// @see         2.0.0 - 20210115 - WebWorker対応（高速化対応）
-// @see         3.0.0 - 20210116 - WebWorker/NoWorker対応（NoScript対応）
-// @see         3.2.0 - 20210117 - Download_files_with_ZIP.user.js → MatometeDownload.user.js
-// @see         3.3.0 - 20210118 - リリース版
-// @see         3.4.0 - 20210131 - fix Blobを保存できない問題修正（Firefox+Greasemonkey+NoScript）
-// @see         3.4.1 - 20210131 - fix arg.levelオプションを修正
-// @see         3.4.2 - 20210131 - fix I/F修正等
-// @require     https://cdn.jsdelivr.net/npm/jszip@3.5.0/dist/jszip.min.js
-// @require     https://cdn.jsdelivr.net/npm/hotkeys-js@3.8.1/dist/hotkeys.min.js
 // @grant       GM.xmlHttpRequest
 // @grant       window.close
+// @require     https://cdn.jsdelivr.net/npm/jszip@3.5.0/dist/jszip.min.js
+// @require     https://cdn.jsdelivr.net/npm/hotkeys-js@3.8.1/dist/hotkeys.min.js
 // ==/UserScript==
 
 (function() {

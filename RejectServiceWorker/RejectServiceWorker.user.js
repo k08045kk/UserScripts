@@ -5,20 +5,20 @@
 //              If ServiceWorker was registered, it clears the cache.
 //              You can use it as a whitelist by setting @exclude.
 //              It is not possible to completely reject registration at the timing of executing the user script.
-// @see         ↓↓↓ Add target page URL ↓↓↓
+// @note        ↓↓↓ Add target page URL ↓↓↓
 // @include     https://*/*
 // @exclude     https://example.com/*
-// @see         ↑↑↑ Add target page URL ↑↑↑
+// @note        ↑↑↑ Add target page URL ↑↑↑
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License
 // @see         https://opensource.org/licenses/MIT
+// @version     0.2.1
+// @note        0.1.0 - 20200328 - 初版
+// @note        0.1.1 - 20200415 - 修正
+// @note        0.2.0 - 20200926 - Greasemonkey対応（unsafeWindow経由でwindowのオブジェクトを書き換え）
+// @note        0.2.1 - 20210125 - RejectServiceWorkers.user.js → RejectServiceWorker.user.js
 // @see         https://github.com/k08045kk/UserScripts
 // @see         https://www.bugbugnow.net/2020/03/Reject-to-register-a-ServiceWorker.html
-// @version     0.2.1
-// @see         0.1.0 - 20200328 - 初版
-// @see         0.1.1 - 20200415 - 修正
-// @see         0.2.0 - 20200926 - Greasemonkey対応（unsafeWindow経由でwindowのオブジェクトを書き換え）
-// @see         0.2.1 - 20210125 - RejectServiceWorkers.user.js → RejectServiceWorker.user.js
 // @run-at      document-start
 // @grant       unsafeWindow
 // ==/UserScript==

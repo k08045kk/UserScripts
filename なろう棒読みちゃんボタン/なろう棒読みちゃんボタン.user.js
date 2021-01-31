@@ -6,17 +6,18 @@
 // @include     https://ncode.syosetu.com/*/*
 // @include     http://novel18.syosetu.com/*/*
 // @include     https://novel18.syosetu.com/*/*
-// @author      toshi
+// @author      toshi (https://github.com/k08045kk)
 // @license     MIT License
 // @see         https://opensource.org/licenses/MIT
-// @namespace   https://www.bugbugnow.net/
 // @version     5
-// @see         1 - add - 初版
-// @see         2 - update - httpsからhttpへの遷移の記述をコメントアウト状態で追加
-// @see         3 - update - リファクタリング
-// @see         4 - update - 棒読みちゃんへの転送を遅延する(長時間待機後に連続で転送するとエラーことがあるため)
-// @see         5 - update - 朗読内容を微調整（タイトルなし、強調ルビなし、短編にボタン追加）
-// @see         5 - fix - 自動朗読が動作していない
+// @note        1.20180210 - 初版
+// @note        2.20180423 - httpsからhttpへの遷移の記述をコメントアウト状態で追加
+// @note        3.20180509 - リファクタリング
+// @note        4.20190226 - 棒読みちゃんへの転送を遅延する（長時間待機後に連続転送でエラーするため）
+// @note        5.20201218 - 朗読内容を微調整（タイトルなし、強調ルビなし、短編にボタン追加）
+// @note        5.20201218 - fix 自動朗読が動作していない
+// @see         https://github.com/k08045kk/UserScripts
+// @see         https://www.bugbugnow.net/2018/02/blog-post_10.html
 // @grant       none
 // ==/UserScript==
 
