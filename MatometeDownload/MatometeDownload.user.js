@@ -9,17 +9,17 @@
 // @@match      *://example.com/*
 // @note        ↑↑↑ Add target page URL ↑↑↑
 // @author      toshi (https://github.com/k08045kk)
-// @license     MIT License
-// @see         https://opensource.org/licenses/MIT
-// @version     3.4.2
-// @note        1.0.0 - 20210113 - 初版
-// @note        2.0.0 - 20210115 - WebWorker対応（高速化対応）
-// @note        3.0.0 - 20210116 - WebWorker/NoWorker対応（NoScript対応）
-// @note        3.2.0 - 20210117 - Download_files_with_ZIP.user.js → MatometeDownload.user.js
-// @note        3.3.0 - 20210118 - リリース版
-// @note        3.4.0 - 20210131 - fix Blobを保存できない問題修正（Firefox+Greasemonkey+NoScript）
-// @note        3.4.1 - 20210131 - fix arg.levelオプションを修正
-// @note        3.4.2 - 20210131 - fix I/F修正等
+// @license     MIT License | https://opensource.org/licenses/MIT
+// @version     3.4.3
+// @since       1.0.0 - 20210113 - 初版
+// @since       2.0.0 - 20210115 - WebWorker対応（高速化対応）
+// @since       3.0.0 - 20210116 - WebWorker/NoWorker対応（NoScript対応）
+// @since       3.2.0 - 20210117 - Download_files_with_ZIP.user.js → MatometeDownload.user.js
+// @since       3.3.0 - 20210118 - リリース版
+// @since       3.4.0 - 20210131 - fix Blobを保存できない問題修正（Firefox+Greasemonkey+NoScript）
+// @since       3.4.1 - 20210131 - fix arg.levelオプションを修正
+// @since       3.4.2 - 20210131 - fix I/F修正等
+// @since       3.4.3 - 20210408 - fix 完了時に背景がちらつくことがある
 // @see         https://github.com/k08045kk/UserScripts
 // @see         https://www.bugbugnow.net/2021/01/download-files-with-zip.html
 // @grant       GM.xmlHttpRequest
@@ -76,13 +76,14 @@
       drawProgress('Compress: '+(Array(3).join(' ')+Math.floor(arg.percent)).slice(-3)+'%');
       break;
     case 'complate':
-      drawProgress();
       const title = 'Download '+arg.status;
       const second = Math.floor((arg.endtime - arg.starttime) / 1000);
       const info = arg.success+'/'+arg.urls.length+':'+arg.failure+' | '+second+'s';
+      drawProgress(' ');
       console.log('complate', arg);
       arg.alert !== false && alert(title+'\n\n'+arg.name+'.zip\n'+info);
       arg.close !== false && arg.close != null && setTimeout(() => window.close(), typeof arg.close === 'number' ? arg.close :  1000);
+      drawProgress();
       break;
     case 'error':
     default:
@@ -377,7 +378,7 @@
   
   // ショートカットキー設定
   const shortcut = 'alt+shift+d';
-  hotkeys(shortcut, function(event, handler) {
+  hotkeys(shortcut, (event, handler) => {
     // ↓↓↓ Add processing for each site ↓↓↓
     if (location.hostname == 'example.com') {
       const urls = [...document.querySelectorAll('body img')].map(img => img.src);
