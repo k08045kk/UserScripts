@@ -10,7 +10,7 @@
 // @note        ↑↑↑ Add target page URL ↑↑↑
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License | https://opensource.org/licenses/MIT
-// @version     3.4.3
+// @version     3.4.4
 // @since       1.0.0 - 20210113 - 初版
 // @since       2.0.0 - 20210115 - WebWorker対応（高速化対応）
 // @since       3.0.0 - 20210116 - WebWorker/NoWorker対応（NoScript対応）
@@ -20,6 +20,7 @@
 // @since       3.4.1 - 20210131 - fix arg.levelオプションを修正
 // @since       3.4.2 - 20210131 - fix I/F修正等
 // @since       3.4.3 - 20210408 - fix 完了時に背景がちらつくことがある
+// @since       3.4.4 - 20210526 - エラー出力まわりを強化
 // @see         https://github.com/k08045kk/UserScripts
 // @see         https://www.bugbugnow.net/2021/01/download-files-with-zip.html
 // @grant       GM.xmlHttpRequest
@@ -30,6 +31,7 @@
 
 (function() {
   'use strict';
+  
   
   // 進歩表示
   const box = document.createElement('div');
@@ -61,6 +63,7 @@
       root.remove();
     }
   };
+  
   
   // 更新処理
   const onDefaultUpdate = function(arg) {
@@ -95,6 +98,7 @@
       break;
     }
   };
+  
   
   /**
    * ZIPダウンロード
@@ -271,7 +275,6 @@
     arg.worker = true;
     
     
-    
     // WebWorker作成
     const code = `
       importScripts('https://cdn.jsdelivr.net/npm/jszip@3.5.0/dist/jszip.min.js');
@@ -376,28 +379,35 @@
     // 備考：対象ページがJavaScript無効の場合、WebWorkerは動作しません。
   };
   
+  
   // ショートカットキー設定
   const shortcut = 'alt+shift+d';
   hotkeys(shortcut, (event, handler) => {
-    // ↓↓↓ Add processing for each site ↓↓↓
-    if (location.hostname == 'example.com') {
-      const urls = [...document.querySelectorAll('body img')].map(img => img.src);
-      urls.push(new File(['Download list.\n\n'+urls.join('\n')], 'list.txt', {type:'text/plain'}));
-      downloadFilesZipAsync({
-        name: document.title.trim(),
-        urls: urls, 
-        //names: [...document.querySelectorAll('body img')].map((img, i) => i+'.jpg'),
-        //worker: false,
-        //level: 6,
-        //folder: false,
-        //empty: false,
-        //alert: false,
-        //close: 1000,
-      });
-    } else {
-      alert('Missing download settings');
+    console.log('shortcut', 'start', location.hostname);
+    try {
+      // ↓↓↓ Add processing for each site ↓↓↓
+      if (location.hostname == 'example.com') {
+        const urls = [...document.querySelectorAll('body img')].map(img => img.src);
+        urls.push(new File(['Download list.\n\n'+urls.join('\n')], 'list.txt', {type:'text/plain'}));
+        downloadFilesZipAsync({
+          name: document.title.trim(),
+          urls: urls, 
+          //names: [...document.querySelectorAll('body img')].map((img, i) => i+'.jpg'),
+          //worker: false,
+          //level: 6,
+          //folder: false,
+          //empty: false,
+          //alert: false,
+          //close: 1000,
+        });
+      } else {
+        alert('Missing download settings');
+      }
+      // ↑↑↑ Add processing for each site ↑↑↑
+    } catch (e) {
+      console.log('shortcut', 'error', e);
     }
-    // ↑↑↑ Add processing for each site ↑↑↑
+    console.log('shortcut', 'end');
   });
   console.log('shortcut', shortcut);
 })();
