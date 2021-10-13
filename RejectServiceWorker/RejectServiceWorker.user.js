@@ -10,13 +10,13 @@
 // @exclude     https://example.com/*
 // @note        ↑↑↑ Add target page URL ↑↑↑
 // @author      toshi (https://github.com/k08045kk)
-// @license     MIT License
-// @see         https://opensource.org/licenses/MIT
-// @version     0.2.1
-// @note        0.1.0 - 20200328 - 初版
-// @note        0.1.1 - 20200415 - 修正
-// @note        0.2.0 - 20200926 - Greasemonkey対応（unsafeWindow経由でwindowのオブジェクトを書き換え）
-// @note        0.2.1 - 20210125 - RejectServiceWorkers.user.js → RejectServiceWorker.user.js
+// @license     MIT License | https://opensource.org/licenses/MIT
+// @version     0.2.2
+// @since       0.1.0 - 20200328 - 初版
+// @since       0.1.1 - 20200415 - 修正
+// @since       0.2.0 - 20200926 - Greasemonkey対応（unsafeWindow経由でwindowのオブジェクトを書き換え）
+// @since       0.2.1 - 20210125 - RejectServiceWorkers.user.js → RejectServiceWorker.user.js
+// @since       0.2.2 - 20210828 - comment メタデータの見直し
 // @see         https://github.com/k08045kk/UserScripts
 // @see         https://www.bugbugnow.net/2020/03/Reject-to-register-a-ServiceWorker.html
 // @run-at      document-start
