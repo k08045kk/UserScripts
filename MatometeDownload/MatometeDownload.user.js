@@ -10,7 +10,7 @@
 // @note        ↑↑↑ Add target page URL ↑↑↑
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License | https://opensource.org/licenses/MIT
-// @version     3.4.4
+// @version     4.0.0
 // @since       1.0.0 - 20210113 - 初版
 // @since       2.0.0 - 20210115 - WebWorker対応（高速化対応）
 // @since       3.0.0 - 20210116 - WebWorker/NoWorker対応（NoScript対応）
@@ -21,6 +21,7 @@
 // @since       3.4.2 - 20210131 - fix I/F修正等
 // @since       3.4.3 - 20210408 - fix 完了時に背景がちらつくことがある
 // @since       3.4.4 - 20210526 - エラー出力まわりを強化
+// @since       4.0.0 - 20222010 - downloadFilesZipAsync() を async function に変更
 // @see         https://github.com/k08045kk/UserScripts
 // @see         https://www.bugbugnow.net/2021/01/download-files-with-zip.html
 // @grant       GM.xmlHttpRequest
@@ -52,8 +53,8 @@
     white-space: pre;
   `);
   const root = document.createElement('div');
-  root.attachShadow({mode:'closed'}).appendChild(box)
-  const drawProgress = function(text) {
+  root.attachShadow({mode:'closed'}).appendChild(box);
+  const drawProgress = (text) => {
     if (!root.parentNode && text) {
       document.body.appendChild(root);
     }
@@ -66,7 +67,7 @@
   
   
   // 更新処理
-  const onDefaultUpdate = function(arg) {
+  const onDefaultUpdate = (arg) => {
     switch (arg.status) {
     case 'ready':
       drawProgress(' ');
@@ -126,15 +127,8 @@
    * @return 実行有無
    *         同一ページ内での並列実行は許可されていません。
    */
-  let isRun = false;
-  const downloadFilesZipAsync = function(arg) {
-    // 並列実行を防止
-    if (isRun) {
-      return false;
-    }
-    isRun = true;
-    
-    // 前処理
+  const downloadFilesZipAsync = async (arg) => {
+    // 1. 前処理
     arg.status = 'ready';
     arg.starttime = Date.now();
     arg.onupdate = arg.onupdate || onDefaultUpdate;
@@ -143,21 +137,20 @@
     arg.percent = 0;
     arg.onupdate(arg);
     
-    // 完了処理
-    const complate = function(status, message) {
+    // 6. 完了処理
+    const onComplate = (status, message) => {
       arg.substatus = arg.substatus || arg.status;
       arg.status = status || 'complate';
       arg.message = message || 'complate';
       arg.endtime = Date.now();
       setTimeout(() => {
         arg.onupdate(arg);
-        isRun = false;
         // 補足：簡易のブラウザ上のダウンロード開始待ち
       }, 0);
     };
     
-    // ファイルのダウンロード
-    const downloadFilesAsync = async function(obj) {
+    // 3. ファイルのダウンロード
+    const downloadFilesAsync = async (obj) => {
       const zip = obj instanceof JSZip ? obj : null;
       const worker = obj instanceof Worker ? obj : null;
       
@@ -177,7 +170,7 @@
         const name = arg.names[i] = arg.names[i] 
                                  || url.name 
                                  || (typeof url === 'string' && url.slice(url.lastIndexOf('/') + 1)) 
-                                 || ''+i;
+                                 || String(i);
         return new Promise((resolve, reject) => {
           const success = (data) => { try { arg.results[i]=!!data; onDownload(name, data); } finally { resolve(); } };
           const failure = () => success();
@@ -192,13 +185,13 @@
                     // 補足：Firefox + Greasemonkey + NoScript の問題
                     //       WebWorker時は、postMessage() で変換されるため、問題現象は発生しない。
                     // 説明：Greasemonkey の ArrayBuffer.arrayBuffer() / FileReader.readAsArrayBuffer() は、
-                    //       スクリプトコンテキスト（ArrayBuffer）ではなく、
-                    //       ページコンテキスト（window.ArrayBuffer）でArrayBufferを返す。
+                    //       コンテンツコンテキスト（ArrayBuffer）ではなく、
+                    //       ページコンテキスト（window.ArrayBuffer）で ArrayBuffer を返す。
                     // see https://bugzilla.mozilla.org/show_bug.cgi?id=1427470
                     // see https://github.com/greasemonkey/greasemonkey/issues/2786
                     const temp = buffer;
                     buffer = new ArrayBuffer(temp.byteLength);
-                    new Int8Array(buffer).set(new Int8Array(temp));
+                    new Uint8Array(buffer).set(new Uint8Array(temp));
                   }
                   success(buffer);
                 } catch (e) {
@@ -232,136 +225,156 @@
       await Promise.all(promises);
     };
     
-    // ZIPのダウンロード
-    const downloadZipAsync = async function(blob) {
+    // 5. ZIPのダウンロード
+    const downloadZip = (blob) => {
       const dataUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = dataUrl;
       a.download = arg.name+'.zip';
       a.dispatchEvent(new MouseEvent('click'));
       setTimeout(() => { URL.revokeObjectURL(dataUrl); }, 1E4); // 10s
-      complate();
+      onComplate();
     };
     
-    // Workerなしの処理
-    const noworkerAsync = async function() {
+    // 2a. Workerなしの処理
+    const noworkerAsync = async () => {
       arg.worker = false;
       try {
         const zip = new JSZip();
         await downloadFilesAsync(arg.folder !== false ? zip.folder(arg.name) : zip);
         
+        // 4a. ZIP圧縮
         arg.status = 'compress';
         arg.onupdate(arg);
         const option = arg.level 
                      ? {type:'arraybuffer', compression:'DEFLATE', compressionOptions:{level:arg.level}}
                      : {type:'arraybuffer'};
-        const buffer = await zip.generateAsync(option, (metadata) => {
+        const buffer = await zip.generateAsync(option, async (metadata) => {
           arg.percent = metadata.percent;
           arg.onupdate(arg);
         });
         arg.percent = 100;
         arg.onupdate(arg);
         
-        await downloadZipAsync(new Blob([buffer]));
+        downloadZip(new Blob([buffer]));
       } catch (e) {
         //console.log(e);
-        complate('error', e.message);
+        onComplate('error', e.message);
       }
     };
     if (arg.worker === false) {
-      noworkerAsync();
+      await noworkerAsync();
       return true;
     }
     arg.worker = true;
     
     
-    // WebWorker作成
-    const code = `
-      importScripts('https://cdn.jsdelivr.net/npm/jszip@3.5.0/dist/jszip.min.js');
-      const zip = new JSZip();
-      let folder = zip;
-      
-      self.addEventListener('message', async (event) => {
-        const data = event.data;
-        try {
-          switch (data.command) {
-          case 'ready':
-            if (data.name) {
-              folder = zip.folder(data.name);
+    // 2b. WebWorker作成
+    const promise = new Promise((resolve, reject) => {
+      const code = `
+        importScripts('https://cdn.jsdelivr.net/npm/jszip@3.5.0/dist/jszip.min.js');
+        const zip = new JSZip();
+        let folder = zip;
+        
+        self.addEventListener('message', async (event) => {
+          const data = event.data;
+          try {
+            switch (data.command) {
+            case 'ready':
+              if (data.name) {
+                folder = zip.folder(data.name);
+              }
+              self.postMessage({command:'go'});
+              break;
+            case 'file':
+              folder.file(data.name, data.buffer);
+              break;
+            case 'generate':
+              // 4b. ZIP圧縮
+              const option = data.level 
+                           ? {type:'arraybuffer', compression:'DEFLATE', compressionOptions:{level:data.level}}
+                           : {type:'arraybuffer'};
+              const buffer = await zip.generateAsync(option, (metadata) => {
+                self.postMessage({command:'progress', percent:metadata.percent});
+              });
+              self.postMessage({command:'progress', percent:100});
+              self.postMessage({command:'complate', buffer:buffer}, [buffer]);
+              break;
+            default:
+              self.postMessage({command:'error', message:'The command cannot be interpreted. (command:'+data.command+')'});
+              break;
             }
-            self.postMessage({command:'go'});
-            break;
-          case 'file':
-            folder.file(data.name, data.buffer);
-            break;
-          case 'generate':
-            const option = data.level 
-                         ? {type:'arraybuffer', compression:'DEFLATE', compressionOptions:{level:data.level}}
-                         : {type:'arraybuffer'};
-            const buffer = await zip.generateAsync(option, (metadata) => {
-              self.postMessage({command:'progress', percent:metadata.percent});
-            });
-            self.postMessage({command:'progress', percent:100});
-            self.postMessage({command:'complate', buffer:buffer}, [buffer]);
-            break;
-          default:
-            self.postMessage({command:'error', message:'The command cannot be interpreted. (command:'+data.command+')'});
-            break;
+          } catch (e) {
+            //console.log(e);
+            self.postMessage({command:'error', message:e.message});
           }
-        } catch (e) {
-          //console.log(e);
-          self.postMessage({command:'error', message:e.message});
-        }
-      });
-    `;
-    const workerUrl = URL.createObjectURL(new Blob([code]));
-    let worker = null;
-    try {
-      worker = new Worker(workerUrl);
-    } catch (e) {
-      // Chrome + NoScript
-      //console.log(e);
-      noworkerAsync();
-      return true;
-    } finally {
-      URL.revokeObjectURL(workerUrl);
-    }
-    worker.addEventListener('error', (event) => {
-      if (arg.status == 'ready') {
-        // Firefox + NoScript
-        noworkerAsync();
-      } else {
-        complate('error', event && event.message || '');
+        });
+      `;
+      const workerUrl = URL.createObjectURL(new Blob([code]));
+      let worker = null;
+      try {
+        worker = new Worker(workerUrl);
+        worker.addEventListener('error', async (event) => {
+          let ret = 'NG';
+          if (arg.status == 'ready') {
+            // Firefox + NoScript
+            ret = 'noworker';
+          } else {
+            onComplate('error', event && event.message || '');
+          }
+          resolve(ret);
+          worker.terminate();
+        });
+        worker.addEventListener('message', async (event) => {
+          const data = event.data;
+          switch (data.command) {
+          case 'go':
+            await downloadFilesAsync(worker);
+            arg.status = 'compress';
+            arg.onupdate(arg);
+            worker.postMessage({command:'generate', level:arg.level});
+            break;
+          case 'progress':
+            arg.percent = data.percent;
+            arg.onupdate(arg);
+            break;
+          case 'complate':
+            downloadZip(new Blob([data.buffer]));
+            resolve('OK');
+            worker.terminate();
+            break;
+          case 'error':
+          default:
+            onComplate('error', data.message || 'The command cannot be interpreted. (command:'+data.command+')');
+            resolve('NG');
+            worker.terminate();
+            break;
+         }
+        });
+        worker.postMessage({command:'ready', name:(arg.folder !== false ? arg.name : null)});
+      } catch (e) {
+        // Chrome + NoScript
+        //console.log(e);
+        resolve('noworker');
+      } finally {
+        URL.revokeObjectURL(workerUrl);
       }
-      worker.terminate();
-    });
-    worker.addEventListener('message', async (event) => {
-      const data = event.data;
-      switch (data.command) {
-      case 'go':
-        await downloadFilesAsync(worker);
-        arg.status = 'compress';
-        arg.onupdate(arg);
-        worker.postMessage({command:'generate', level:arg.level});
+    }).then(async (value) => {
+      let ret = false;
+      switch (value) {
+      case 'noworker':          // 処理未実施（noworkerで再実行）
+        await noworkerAsync();
+        // not break
+      case 'OK':                // 処理完了
+        ret = true;
         break;
-      case 'progress':
-        arg.percent = data.percent;
-        arg.onupdate(arg);
-        break;
-      case 'complate':
-        await downloadZipAsync(new Blob([data.buffer]));
-        worker.terminate();
-        break;
-      case 'error':
+      case 'NG':                // 処理失敗
       default:
-        complate('error', data.message || 'The command cannot be interpreted. (command:'+data.command+')');
-        worker.terminate();
         break;
-     }
+      }
+      return ret;
     });
-    worker.postMessage({command:'ready', name:(arg.folder !== false ? arg.name : null)});
-    
-    return true;
+    return await promise;
     
     // 備考：staus: ready > download > compress > complate >> error
     // 備考：command: ready > go > file > generate > progress > complate >> error
@@ -382,14 +395,14 @@
   
   // ショートカットキー設定
   const shortcut = 'alt+shift+d';
-  hotkeys(shortcut, (event, handler) => {
+  hotkeys(shortcut, async (event, handler) => {
     console.log('shortcut', 'start', location.hostname);
     try {
       // ↓↓↓ Add processing for each site ↓↓↓
       if (location.hostname == 'example.com') {
         const urls = [...document.querySelectorAll('body img')].map(img => img.src);
         urls.push(new File(['Download list.\n\n'+urls.join('\n')], 'list.txt', {type:'text/plain'}));
-        downloadFilesZipAsync({
+        await downloadFilesZipAsync({
           name: document.title.trim(),
           urls: urls, 
           //names: [...document.querySelectorAll('body img')].map((img, i) => i+'.jpg'),
