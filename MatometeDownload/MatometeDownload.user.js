@@ -6,11 +6,11 @@
 // @description:en  Use the [Alt+Shift+D] shortcut keys to download files with ZIP.
 // @description:ja  [Alt+Shift+D]のショートカットキーでZIPでファイルをまとめてダウンロードします。
 // @note        ↓↓↓ Add target page URL ↓↓↓
-// @@match      *://example.com/*
+// @match       *://example.com/*
 // @note        ↑↑↑ Add target page URL ↑↑↑
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License | https://opensource.org/licenses/MIT
-// @version     4.0.0
+// @version     4.0.1
 // @since       1.0.0 - 20210113 - 初版
 // @since       2.0.0 - 20210115 - WebWorker対応（高速化対応）
 // @since       3.0.0 - 20210116 - WebWorker/NoWorker対応（NoScript対応）
@@ -21,7 +21,8 @@
 // @since       3.4.2 - 20210131 - fix I/F修正等
 // @since       3.4.3 - 20210408 - fix 完了時に背景がちらつくことがある
 // @since       3.4.4 - 20210526 - エラー出力まわりを強化
-// @since       4.0.0 - 20222010 - downloadFilesZipAsync() を async function に変更
+// @since       4.0.0 - 20220210 - downloadFilesZipAsync() を async function に変更
+// @since       4.0.1 - 20220401 - fix 「@@match」→「@match」
 // @see         https://github.com/k08045kk/UserScripts
 // @see         https://www.bugbugnow.net/2021/01/download-files-with-zip.html
 // @grant       GM.xmlHttpRequest
