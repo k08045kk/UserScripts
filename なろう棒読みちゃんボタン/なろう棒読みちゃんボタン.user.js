@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name        なろう棒読みちゃんボタン
 // @description 小説家になろうを棒読みちゃんを使用して朗読する。
-//              棒読みちゃん用のWebSocket受付プラグインの導入が必要です。
+//              棒読みちゃんは、 Ver0.1.11.0 Beta21 以降を使用してください。
+//              アプリケーション連動（HTTP連携）を有効にしてください。
+//              HTTP連携のポート番号（50080）を変更しないでください。
 // @match       *://ncode.syosetu.com/*/*
 // @match       *://novel18.syosetu.com/*/*
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License | https://opensource.org/licenses/MIT
-// @version     7
+// @version     8
 // @since       1 - 20160210 - 初版
 // @since       2 - 20180423 - httpsからhttpへの遷移の記述をコメントアウト状態で追加
 // @since       3 - 20180509 - リファクタリング
@@ -15,6 +17,7 @@
 // @since       5 - 20201218 - fix 自動朗読が動作していない
 // @since       6 - 20210416 - HTTPS対応 + 文章分割を改善
 // @since       7 - 20220210 - アプリケーション連動対応
+// @since       8 - 20220910 - リファクタリング
 // @see         https://www.bugbugnow.net/2018/02/blog-post_10.html
 // @grant       none
 // ==/UserScript==
@@ -27,8 +30,6 @@
   
   // 棒読みちゃん（アプリケーション連動）
   const sendBouyomiChanAppLinkage = async (text) => {
-    const callee = sendBouyomiChanAppLinkage;
-
     let ret = true;
     try {
       text = text.replace(/ /g, '　');    // 「 」が「+」に変換されて行間が崩れる問題を回避
@@ -42,10 +43,6 @@
       await fetch(url);
     } catch (e) {
       ret = false;
-      if (!callee.error) {
-        callee.error = true;
-        alert('棒読みちゃんへの送信に失敗しました');
-      }
     }
     return ret;
   };
@@ -112,29 +109,25 @@
     }
   };
   
-  // 作者情報を取得(再生ボタンを配置する前に取得)
-  let title = '';
-  try {
-    title = document.querySelector('.contents1').innerText;
-  } catch (e) {}
-  
   const onBouyomiChanButton = async function() {
-    //console.log('なろう棒読みちゃんボタン');
+    //console.log('なろう棒読みちゃんボタン'); 
     
     // ２重クリック防止
     this.disabled = true;
+    this.style.color = '#a00';
+    this.style.background = '#ccc';
     
     let text = '';
     
-    // タイトル+作者名を追加
-    // タイトルなし（長いタイトルを毎回読むのが嫌なため）
-    //text += title + '…。';
+    // タイトルを追加
+    //const title = document.querySelector('.novel_title')?.innerText   // 短編
+    //           || document.querySelector('.contents1 > a')?.innerText // 連載
+    //           || '';
+    //text += title + '。';
     
     // サブタイトルを追加
-    try {
-      let subtitle = document.querySelector('.novel_subtitle').innerText;
-      text += subtitle + '…。';
-    } catch (e) {}
+    const subtitle = document.querySelector('.novel_subtitle')?.innerText ?? '';
+    text += subtitle + '…。';
     
     // 本文を追加
     // ルビあり文字の原文を削除（ルビあり文字を2重に読み上げるのを回避）
@@ -155,52 +148,36 @@
     text += novel.innerText;
     
     text += "…。\n以上、棒読みちゃんによる朗読でした。";
-    text = text.replace(/\r?\n\s*/g, '\n');             // 通信量を削減
+    text = text.replace(/\r?\n\s*/g, '\n')        // 処理の簡略化
+               .replace(/\n\n\n+/g, '\n\n\n')     // 休止符の連続使用を制限
+               .replace(/・・・+/g, '・・・')
+               .replace(/、、、+/g, '、、、')
+               .replace(/。。。+/g, '。。。')
+               .replace(/……+/g, '……');
     
-    // 一定文字数をこえると、プラグインがインデックス範囲外でハングするため、複数回送信する
-    // (文字数だけで区切ると単語の途中で送信してしまう可能性があるため)
-    // (単語の途中で送信してしまうと、棒読みちゃんの発音が意図しないものとなる可能性が高い)
     const segments = ['\n\n','。','？','！','、','」', '】','）','…','・','.','?','!',',','}','\n',' '];
-    for (let s of segmenter(text, segments, 200)) {
-      // 休止符の連続使用を制限
-      s = s.replace(/\n\n\n+/g, '\n\n\n')
-           .replace(/・・・+/g, '・・・')
-           .replace(/、、、+/g, '、、、')
-           .replace(/。。。+/g, '。。。')
-           .replace(/……+/g, '……');
+    for (const s of segmenter(text, segments, 256)) {
       if (s.trim() == '') { continue; }
       
-      if (!(await sendBouyomiChanAppLinkage(s))) {
+      if (await sendBouyomiChanAppLinkage(s) === false) {
+        // アラート出力（通信エラー）
+        alert('棒読みちゃんへの送信に失敗しました');
         break;
       }
     }
-    // 一定の文字列を超えた場合、それ以降朗読しなくなる問題がある
-    // 例：http://ncode.syosetu.com/n4006r/12/
+    
+    this.style.color = '#000';
   };
   
   // 再生ボタンを配置
-  const element = document.querySelector('.contents1') || document.querySelector('.novel_title');
-  element.innerHTML += `
-<div style="float:right">
-  <style>
-    #bouyomichan {
-      padding: .25em 1em;
-      background: #0076bf;
-      color: #fff;
-      cursor: pointer;
-    }
-    #bouyomichan:disabled {
-      background: #ccc;
-      color: #000;
-    }
-  </style>
-  <button id="bouyomichan">棒読みちゃん</button>
-</div>`;
+  const element = document.querySelector('.contents1')
+               || document.querySelector('.novel_title');
+  element.innerHTML += `<button id="bouyomichan" style="padding: .25em 1em; background: #0076bf; color: #fff; cursor: pointer; float: right;">棒読みちゃん</button>`;
   document.getElementById('bouyomichan').addEventListener('click', onBouyomiChanButton);
     
   // 自動朗読
   // URLにbouyomichan=trueを指定するとページ移動で自動朗読する
-  var url = new URL(location.href);
+  const url = new URL(location.href);
   if (url.searchParams.has('bouyomichan')) {
     onBouyomiChanButton.call(document.getElementById('bouyomichan'));
     document.querySelectorAll('#novel_color .novel_bn a').forEach((v) => v.href+='?bouyomichan');
