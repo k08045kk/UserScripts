@@ -8,7 +8,7 @@
 // @match       *://novel18.syosetu.com/*/*
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License | https://opensource.org/licenses/MIT
-// @version     8
+// @version     9
 // @since       1 - 20160210 - 初版
 // @since       2 - 20180423 - httpsからhttpへの遷移の記述をコメントアウト状態で追加
 // @since       3 - 20180509 - リファクタリング
@@ -18,6 +18,7 @@
 // @since       6 - 20210416 - HTTPS対応 + 文章分割を改善
 // @since       7 - 20220210 - アプリケーション連動対応
 // @since       8 - 20220910 - リファクタリング
+// @since       9 - 20220911 - autobouyomichan 対応
 // @see         https://www.bugbugnow.net/2018/02/blog-post_10.html
 // @grant       none
 // ==/UserScript==
@@ -176,10 +177,31 @@
   document.getElementById('bouyomichan').addEventListener('click', onBouyomiChanButton);
     
   // 自動朗読
-  // URLにbouyomichan=trueを指定するとページ移動で自動朗読する
+  // URLに ?bouyomichan / ?autobouyomichan を指定するとページ移動で自動朗読する
   const url = new URL(location.href);
   if (url.searchParams.has('bouyomichan')) {
-    onBouyomiChanButton.call(document.getElementById('bouyomichan'));
     document.querySelectorAll('#novel_color .novel_bn a').forEach((v) => v.href+='?bouyomichan');
+    onBouyomiChanButton.call(document.getElementById('bouyomichan'));
+  }
+  if (url.searchParams.has('autobouyomichan')) {
+    document.querySelectorAll('#novel_color .novel_bn a').forEach((v) => v.href+='?autobouyomichan');
+    (async () => {
+      await onBouyomiChanButton.call(document.getElementById('bouyomichan'));
+      const next = document.querySelectorAll('#novel_color .novel_bn a')[1];
+      if (next.innerText == '次へ >>') {
+        const id = setInterval(async () => {
+          try {
+            const response = await fetch('http://localhost:50080/GetTalkTaskCount');
+      		  const json = await response.json();
+            if (json.talkTaskCount === 0) {
+              window.location.href = next.href;
+              clearInterval(id);
+            }
+          } catch (e) {
+            clearInterval(id);
+          }
+        }, 1000);
+      }
+    })();
   }
 })();
