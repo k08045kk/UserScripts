@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name        なろう棒読みちゃんボタン
-// @description 小説家になろうを棒読みちゃんを使用して朗読する。
+// @description 小説家になろうを棒読みちゃんに転送して朗読してもらう。
 //              棒読みちゃんは、 Ver0.1.11.0 Beta21 以降を使用してください。
 //              アプリケーション連動（HTTP連携）を有効にしてください。
 //              HTTP連携のポート番号（50080）を変更しないでください。
@@ -8,7 +8,7 @@
 // @match       *://novel18.syosetu.com/*/*
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License | https://opensource.org/licenses/MIT
-// @version     9
+// @version     11
 // @since       1 - 20160210 - 初版
 // @since       2 - 20180423 - httpsからhttpへの遷移の記述をコメントアウト状態で追加
 // @since       3 - 20180509 - リファクタリング
@@ -19,6 +19,8 @@
 // @since       7 - 20220210 - アプリケーション連動対応
 // @since       8 - 20220910 - リファクタリング
 // @since       9 - 20220911 - autobouyomichan 対応
+// @since       10 - 20230304 - 自動朗読の一時停止
+// @since       11 - 20230304 - ShadowDOM 対応
 // @see         https://www.bugbugnow.net/2018/02/blog-post_10.html
 // @grant       none
 // ==/UserScript==
@@ -150,13 +152,16 @@
     
     text += "…。\n以上、棒読みちゃんによる朗読でした。";
     text = text.replace(/\r?\n\s*/g, '\n')        // 処理の簡略化
-               .replace(/\n\n\n+/g, '\n\n\n')     // 休止符の連続使用を制限
-               .replace(/・・・+/g, '・・・')
-               .replace(/、、、+/g, '、、、')
-               .replace(/。。。+/g, '。。。')
-               .replace(/……+/g, '……');
+               //.replace(/\n\n\n+/g, '\n\n\n')     // 休止符の連続使用を制限
+               //.replace(/・・・+/g, '・・・')
+               //.replace(/、、、+/g, '、、、')
+               //.replace(/。。。+/g, '。。。')
+               //.replace(/……+/g, '……')
+               .replace(/(\S\S+)\1\1+/g, '$1$1$1')
+               .replace(/(.)\1\1+/msg, '$1$1$1');
     
-    const segments = ['\n\n','。','？','！','、','」', '】','）','…','・','.','?','!',',','}','\n',' '];
+    //const segments = ['\n\n','。','？','！','、','」', '】','）','…','・','.','?','!',',','}','\n',' '];
+    const segments = ['。','、','…','・','.',',','\n','？','！','?','!','　',' '];
     for (const s of segmenter(text, segments, 256)) {
       if (s.trim() == '') { continue; }
       
@@ -171,31 +176,54 @@
   };
   
   // 再生ボタンを配置
+  const root = document.createElement('div');
+  root.attachShadow({mode:'open'})
+  root.shadowRoot.innerHTML = `
+<div id='bouyomichan' style="float: right;">
+  <label hidden="hidden">自動朗読：<input id="auto" type="checkbox"/></label>
+  <button id="btn" style="padding: .25em 1em; background: #0076bf; color: #fff; cursor: pointer;">棒読みちゃん</button>
+<div>`;
+  const btn = root.shadowRoot.getElementById('btn');
+  btn.addEventListener('click', onBouyomiChanButton);
+  const auto = root.shadowRoot.getElementById('auto');
+
   const element = document.querySelector('.contents1')
                || document.querySelector('.novel_title');
-  element.innerHTML += `<button id="bouyomichan" style="padding: .25em 1em; background: #0076bf; color: #fff; cursor: pointer; float: right;">棒読みちゃん</button>`;
-  document.getElementById('bouyomichan').addEventListener('click', onBouyomiChanButton);
+  element.insertAdjacentElement('beforeend', root);
     
   // 自動朗読
-  // URLに ?bouyomichan / ?autobouyomichan を指定するとページ移動で自動朗読する
+  // URLに ?bouyomichan を指定するとページ移動で自動朗読する
   const url = new URL(location.href);
   if (url.searchParams.has('bouyomichan')) {
+    // 履歴対策
+    history.replaceState('','',url.pathname);
+    
     document.querySelectorAll('#novel_color .novel_bn a').forEach((v) => v.href+='?bouyomichan');
-    onBouyomiChanButton.call(document.getElementById('bouyomichan'));
+    onBouyomiChanButton.call(btn);
   }
+  // URLに ?autobouyomichan を指定すると自動でページ移動して朗読する
   if (url.searchParams.has('autobouyomichan')) {
+    // 履歴対策
+    history.replaceState('','',url.pathname);
+    
+    auto.checked = url.searchParams.get('autobouyomichan') === 'true';
+    auto.parentElement.removeAttribute('hidden');
     document.querySelectorAll('#novel_color .novel_bn a').forEach((v) => v.href+='?autobouyomichan');
     (async () => {
-      await onBouyomiChanButton.call(document.getElementById('bouyomichan'));
+      await onBouyomiChanButton.call(btn);
       const next = document.querySelectorAll('#novel_color .novel_bn a')[1];
       if (next.innerText == '次へ >>') {
         const id = setInterval(async () => {
           try {
+            if (!auto.checked) {
+              return;
+            }
             const response = await fetch('http://localhost:50080/GetTalkTaskCount');
-      		  const json = await response.json();
+            const json = await response.json();
             if (json.talkTaskCount === 0) {
-              window.location.href = next.href;
               clearInterval(id);
+              await sendBouyomiChanAppLinkage('自動朗読中です。…。…。…。')
+              window.location.href = next.href+'=true';
             }
           } catch (e) {
             clearInterval(id);
