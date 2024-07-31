@@ -1,62 +1,61 @@
 // ==UserScript==
 // @name        RejectServiceWorker
-// @description Reject to register a ServiceWorker.
-//              Unregister the registered Service Worker.
-//              If ServiceWorker was registered, it clears the cache.
+// @description Reject to register a service worker.
+//              Reject to register new service worker by overwriting the register function.
+//              If service worker was registered, it unregister the registered service worker.
+//              If service worker was registered, it clears the cache.
 //              You can use it as a whitelist by setting @exclude.
-//              It is not possible to completely reject registration at the timing of executing the user script.
+//              As long as user script execution timing is used, complete reject cannot be achieved.
 // @note        ↓↓↓ Add target page URL ↓↓↓
 // @include     https://*/*
 // @exclude     https://example.com/*
 // @note        ↑↑↑ Add target page URL ↑↑↑
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License | https://opensource.org/licenses/MIT
-// @version     0.2.3
+// @version     0.3.0
 // @since       0.1.0 - 20200328 - 初版
 // @since       0.1.1 - 20200415 - 修正
 // @since       0.2.0 - 20200926 - Greasemonkey対応（unsafeWindow経由でwindowのオブジェクトを書き換え）
 // @since       0.2.1 - 20210125 - RejectServiceWorkers.user.js → RejectServiceWorker.user.js
 // @since       0.2.2 - 20210828 - comment メタデータの見直し
 // @since       0.2.3 - 20211013 - comment 権限不足エラーの注意書きを追記
+// @since       0.3.0 - 20240326 - Proxy 方式に対応（他、動作不可問題修正）
 // @see         https://github.com/k08045kk/UserScripts
 // @see         https://www.bugbugnow.net/2020/03/Reject-to-register-a-ServiceWorker.html
 // @run-at      document-start
 // @grant       unsafeWindow
 // ==/UserScript==
 
-(function(w) {
-  // Reject to register a ServiceWorker
-  if ('serviceWorker' in navigator) {
-    w.ServiceWorkerContainer.prototype.register = function(scriptURL, options) {
-      return new Promise((resolve, reject) => {
-        //console.log('Reject to register a ServiceWorker.');
-        reject(new Error('Reject to register a ServiceWorker.'));
-      });
-    };
-    // Note: It may be registered before `document-start`.
-    // Note: A permission error occurs on the page accessing the register() Promise in Firefox.
-    //       This is because the context script Promise is accessed from the page script.
-    //       I can't figure out how to get around this in user scripts.
-    //       The WebExtensions version works around this.
+;(async function(win) {
+  let   isExec = false;
+  try { isExec = !!navigator.serviceWorker; } catch {}
+  if (  isExec === false) {
+    // http environmental measures
+    return;
   }
   
-  // Unregister the registered Service Worker
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.getRegistrations().then((registrations) => {
-      if (registrations.length != 0) {
-        for (let i=0; i<registrations.length; i++) {
-          registrations[i].unregister();
-          //console.log('ServiceWorker unregister.');
-        }
-        caches.keys().then((keys) => {
-          Promise.all(keys.map((key) => { caches.delete(key); })).then(() => {
-            //console.log('caches delete.');
-          });
-        });
-      }
-    });
+  // Reject to register a service worker
+  const register = new Proxy(win.ServiceWorkerContainer.prototype.register, {
+    apply: () => win.Promise.reject(new win.Error('Reject to register a service worker.')),
+  });
+  try {
+    exportFunction(register, 
+                   win.ServiceWorkerContainer.prototype, 
+                   {defineAs: 'register'});
+  } catch {
+    win.ServiceWorkerContainer.prototype.register = register;
+  }
+  
+  // Unregister the registered service worker
+  const registrations = await navigator.serviceWorker.getRegistrations();
+  if (registrations.length) {
+    // Unregister service worker
+    const unregisterPromises = registrations.map(registration => registration.unregister());
+    await Promise.all(unregisterPromises);
+    
+    // Delete all cache storage
+    const keys = await caches.keys();
+    const cacheDeletePromises = keys.map(key => caches.delete(key));
+    await Promise.all(cacheDeletePromises);
   }
 })(unsafeWindow || window);
-// Note: It is not working on Firefox (Tampermonkey / Violetmonkey) because of the following error.
-//       Error "Uncaught (in promise) DOMException: The operation is insecure."
-//       Use it with Firefox (Greasemonkey) or Chrome (Tampermonkey / Violetmonkey).
