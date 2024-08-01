@@ -8,7 +8,7 @@
 // @match       *://novel18.syosetu.com/*/*
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License | https://opensource.org/licenses/MIT
-// @version     11
+// @version     12
 // @since       1 - 20160210 - 初版
 // @since       2 - 20180423 - httpsからhttpへの遷移の記述をコメントアウト状態で追加
 // @since       3 - 20180509 - リファクタリング
@@ -21,6 +21,7 @@
 // @since       9 - 20220911 - autobouyomichan 対応
 // @since       10 - 20230304 - 自動朗読の一時停止
 // @since       11 - 20230304 - ShadowDOM 対応
+// @since       12 - 20240731 - ruby 仕様変更対応
 // @see         https://www.bugbugnow.net/2018/02/blog-post_10.html
 // @grant       none
 // ==/UserScript==
@@ -62,7 +63,7 @@
       // 区切り文字で分割する
       // 分割不可（最大文字数分の文字列を出力する）
       next = prev + max;
-	    for (let s=0; s<segments.length; s++) {
+      for (let s=0; s<segments.length; s++) {
         slen = segments[s].length;
         if (indexs[s] === -1) {
           // 区切り文字なし（捜索済み）
@@ -137,15 +138,15 @@
     const novel = document.getElementById('novel_honbun').cloneNode(true);
     novel.querySelectorAll('ruby rp').forEach((rp) => rp.remove());
     novel.querySelectorAll('ruby').forEach((ruby) => {
-      const rb = ruby.querySelector('rb');
       const rt = ruby.querySelector('rt');
       if (!rt) {
         
       } else if (rt.innerText.replace(/[・、]+/g, '') == '') {
         // 傍点ならば、原文を優先する
         rt.remove();
-      } else if(rb) {
-        rb.remove();
+      } else if(rt) {
+        ruby.innerText = rt.innerText;
+        rt.remove();
       }
     });
     text += novel.innerText;
