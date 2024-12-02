@@ -8,7 +8,7 @@
 // @match       *://novel18.syosetu.com/*/*
 // @author      toshi (https://github.com/k08045kk)
 // @license     MIT License | https://opensource.org/licenses/MIT
-// @version     12
+// @version     13
 // @since       1 - 20160210 - 初版
 // @since       2 - 20180423 - httpsからhttpへの遷移の記述をコメントアウト状態で追加
 // @since       3 - 20180509 - リファクタリング
@@ -22,14 +22,15 @@
 // @since       10 - 20230304 - 自動朗読の一時停止
 // @since       11 - 20230304 - ShadowDOM 対応
 // @since       12 - 20240731 - ruby 仕様変更対応
+// @since       13 - 20241004 - サイト構造変化対応
 // @see         https://www.bugbugnow.net/2018/02/blog-post_10.html
 // @grant       none
 // ==/UserScript==
 
 (function() {
-  if (document.getElementById('novel_honbun') == null) {
+  if (document.querySelector('.p-novel__body') == null) {
     // 対象ページではない時
-    return;
+    //return;
   }
   
   // 棒読みちゃん（アプリケーション連動）
@@ -130,12 +131,12 @@
     //text += title + '。';
     
     // サブタイトルを追加
-    const subtitle = document.querySelector('.novel_subtitle')?.innerText ?? '';
+    const subtitle = document.querySelector('.p-novel__title')?.innerText ?? '';
     text += subtitle + '…。';
     
     // 本文を追加
     // ルビあり文字の原文を削除（ルビあり文字を2重に読み上げるのを回避）
-    const novel = document.getElementById('novel_honbun').cloneNode(true);
+    const novel = document.querySelector('.p-novel__text:not(.p-novel__text--afterword):not(.p-novel__text--preface)').cloneNode(true);
     novel.querySelectorAll('ruby rp').forEach((rp) => rp.remove());
     novel.querySelectorAll('ruby').forEach((ruby) => {
       const rt = ruby.querySelector('rt');
@@ -188,8 +189,8 @@
   btn.addEventListener('click', onBouyomiChanButton);
   const auto = root.shadowRoot.getElementById('auto');
 
-  const element = document.querySelector('.contents1')
-               || document.querySelector('.novel_title');
+  const element = document.querySelector('.c-announce');
+  
   element.insertAdjacentElement('beforeend', root);
     
   // 自動朗読
